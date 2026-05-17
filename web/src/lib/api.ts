@@ -17,10 +17,15 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   const participantId = getParticipantId();
   headers.set("X-Participant-Id", participantId);
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+    });
+  } catch {
+    throw new Error(`Unable to reach the OmniPoll API at ${API_URL}. Run npm run dev, or update VITE_API_URL and CLIENT_ORIGIN.`);
+  }
   return parseResponse<T>(response);
 }
 

@@ -6,17 +6,13 @@ OmniPoll is a live polling app for creators and participants. This repo uses the
 
 ```bash
 npm install
-npm run socket-server
-```
-
-Open a second terminal:
-
-```bash
 npm run dev
 ```
 
 Frontend: `http://localhost:8080`  
 API and Socket.IO: `http://localhost:8787`
+
+`npm run dev` starts both the Vite frontend and the local Node/Express API. If you need to run them separately, use `npm run dev:client` and `npm run dev:api`.
 
 ## Environment
 
