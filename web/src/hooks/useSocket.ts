@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { io } from "socket.io-client";
-import { API_URL } from "@/lib/api";
+import { API_URL, isLocalOnlyMode } from "@/lib/api";
 import type { Poll, PollResults } from "@/lib/types";
 import { useApp } from "@/context/AppContext";
 
@@ -17,15 +17,18 @@ export function useSocket(
   const { state, dispatch } = useApp();
 
   const socket = useMemo(
-    () =>
-      io(API_URL, {
+    () => {
+      if (isLocalOnlyMode()) return null;
+      return io(API_URL, {
         transports: ["websocket", "polling"],
         autoConnect: true,
-      }),
+      });
+    },
     [],
   );
 
   useEffect(() => {
+    if (!socket) return;
     const handleConnect = () => dispatch({ type: "SET_SOCKET_CONNECTED", payload: true });
     const handleDisconnect = () => dispatch({ type: "SET_SOCKET_CONNECTED", payload: false });
 
@@ -42,6 +45,7 @@ export function useSocket(
   }, [dispatch, socket]);
 
   useEffect(() => {
+    if (!socket) return;
     if (!pollId && !code) return;
     socket.emit("joinPoll", { pollId, code });
 

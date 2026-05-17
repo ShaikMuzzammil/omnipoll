@@ -20,10 +20,8 @@ export default function Signup() {
 
   const validate = () => {
     if (!name.trim()) { setError("Please enter your name"); return false; }
-    if (!email.trim()) { setError("Please enter your email"); return false; }
-    if (!email.includes("@")) { setError("Please enter a valid email"); return false; }
+    if (!email.trim()) { setError("Please enter your email or account name"); return false; }
     if (!password.trim()) { setError("Please enter a password"); return false; }
-    if (password.length < 6) { setError("Password must be at least 6 characters"); return false; }
     return true;
   };
 
@@ -98,10 +96,10 @@ export default function Signup() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-charcoal">Email</Label>
+              <Label htmlFor="email" className="text-charcoal">Email or account name</Label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate" />
-                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="pl-10 bg-cream border-clay/40 focus:border-terracotta focus:ring-terracotta/20" />
+                <Input id="email" type="text" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com or nova" className="pl-10 bg-cream border-clay/40 focus:border-terracotta focus:ring-terracotta/20" />
               </div>
             </div>
             <div className="space-y-2">
