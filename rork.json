@@ -1,10 +1,13 @@
 {
-  "$schema": "https://rork.com/schema/rork.json",
-  "apps": [
-    {
-      "name": "OmniPoll",
-      "path": "web",
-      "framework": "web"
-    }
-  ]
+  "name": "omnipoll",
+  "version": "2.0.0",
+  "description": "Real-time live polling platform — multiple choice, word cloud, Q&A, quiz, rating",
+  "author": "ShaikMuzzammil",
+  "private": true,
+  "workspaces": ["web"],
+  "scripts": {
+    "dev": "cd web && npm run dev",
+    "build": "cd web && npm run build",
+    "start": "cd web && npm run socket-server"
+  }
 }

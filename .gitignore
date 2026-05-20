@@ -3,4 +3,6 @@ dist/
 .env
 *.local
 .DS_Store
-server/data/omnipoll.json
+web/node_modules/
+web/dist/
+web/server/data/omnipoll.json
