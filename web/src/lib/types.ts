@@ -1,137 +1,124 @@
-export type PollType = "multiple_choice" | "word_cloud" | "qa" | "quiz" | "rating";
-export type PollStatus = "draft" | "live" | "paused" | "closed";
+// OmniPoll shared types
 
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  provider: "email";
-  createdAt?: string;
-}
+export type PollType = "multiple_choice" | "word_cloud" | "qa" | "quiz" | "rating";
+export type PollStatus = "live" | "paused" | "closed";
 
 export interface PollOption {
   id: string;
   text: string;
   order?: number;
-  votes?: number;
 }
 
 export interface QuizQuestion {
   id: string;
-  pollId?: string;
   questionText: string;
-  options: string[];
   correctAnswer: string;
   points: number;
   timeLimit: number;
-  order: number;
+  options: PollOption[];
 }
 
-export interface PollSettings {
-  anonymity?: boolean;
-  moderation?: boolean;
-  allowMultiple?: boolean;
-  showResults?: boolean;
-  restrictOnePerDevice?: boolean;
-  timer?: number;
-  ratingMin?: number;
-  ratingMax?: number;
-  ratingStep?: number;
-  ratingLowLabel?: string;
-  ratingHighLabel?: string;
-  maxResponses?: number;
+export interface QAQuestion {
+  id: string;
+  questionText: string;
+  upvotes: number;
+  status: "open" | "answered" | "highlighted";
+  participantId?: string;
+  createdAt: number;
 }
 
 export interface PollResponse {
   id: string;
-  pollId: string;
-  participantId: string;
-  answer: Record<string, unknown>;
-  createdAt: string;
-}
-
-export interface QnAQuestion {
-  id: string;
-  pollId: string;
   participantId?: string;
-  questionText: string;
-  upvotes: number;
-  status: "active" | "answered" | "highlighted";
-  createdAt: string;
+  participantName?: string;
+  answer: unknown;
+  questionId?: string;
+  isCorrect?: boolean;
+  score?: number;
+  createdAt: number;
 }
 
-export interface QuizSubmission {
-  id: string;
-  participantId: string;
-  participantName: string;
-  quizPollId: string;
-  questionId: string;
-  selectedAnswer: string;
-  isCorrect: boolean;
-  score: number;
-  createdAt: string;
+export interface PollSettings {
+  duration?: number | null;
+  showResults?: boolean;
+  oneVote?: boolean;
+  multiSelect?: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  labelLeft?: string;
+  labelRight?: string;
+  maxResponses?: number;
 }
 
 export interface Poll {
   id: string;
-  creatorId: string;
-  title: string;
-  question: string;
-  description?: string;
-  category?: string;
-  type: PollType;
-  status: PollStatus;
   code: string;
-  createdAt: string;
-  updatedAt?: string;
-  expiresAt?: string | null;
-  settings?: PollSettings;
-  options?: PollOption[];
-  responses?: PollResponse[];
-  qnaQuestions?: QnAQuestion[];
-  quizQuestions?: QuizQuestion[];
-  quizSubmissions?: QuizSubmission[];
+  title: string;
+  type: PollType;
+  question: string;
+  settings: PollSettings;
+  options: PollOption[];
+  quizQuestions: QuizQuestion[];
+  responses: PollResponse[];
+  qaQuestions: QAQuestion[];
+  status: PollStatus;
+  creatorId?: string;
+  participants: string[];
+  createdAt: number;
+  expiresAt: number | null;
+}
+
+export interface OptionResult extends PollOption {
+  votes: number;
+  pct: number;
+}
+
+export interface LeaderboardEntry {
+  participantId: string;
+  name: string;
+  score: number;
+  answered: number;
+  correct: number;
+}
+
+export interface WordEntry {
+  text: string;
+  count: number;
 }
 
 export interface SentimentResult {
-  positive: number;
-  neutral: number;
-  negative: number;
   score: number;
   label: "positive" | "neutral" | "negative";
 }
 
-export interface ThemeResult {
+export interface ThemeEntry {
   label: string;
   count: number;
-  examples: string[];
 }
 
 export interface PollResults {
-  pollId: string;
-  code: string;
-  type: PollType;
-  status: PollStatus;
-  totalResponses: number;
   participants: number;
+  // multiple_choice
   totalVotes?: number;
-  options?: Array<PollOption & { pct: number }>;
+  options?: OptionResult[];
+  // word_cloud
+  words?: WordEntry[];
+  totalResponses?: number;
+  sentiment?: SentimentResult;
+  themes?: ThemeEntry[];
+  // qa
+  questions?: QAQuestion[];
+  // quiz
+  leaderboard?: LeaderboardEntry[];
+  submissions?: PollResponse[];
+  // rating
   average?: number;
   distribution?: Record<string, number>;
-  values?: number[];
-  words?: Array<{ text: string; count: number }>;
-  responses?: Array<{ id?: string; text: string }>;
-  questions?: QnAQuestion[];
-  sentiment?: SentimentResult;
-  themes?: ThemeResult[];
-  leaderboard?: Array<{
-    participantId: string;
-    name: string;
-    score: number;
-    correct: number;
-    answered: number;
-  }>;
-  submissions?: QuizSubmission[];
-  updatedAt: string;
 }
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+}

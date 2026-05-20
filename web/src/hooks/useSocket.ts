@@ -1,76 +1,88 @@
-import { useEffect, useMemo } from "react";
-import { io } from "socket.io-client";
-import { API_URL, isLocalOnlyMode } from "@/lib/api";
+import { useEffect, useRef, useCallback } from "react";
+import { io, Socket } from "socket.io-client";
 import type { Poll, PollResults } from "@/lib/types";
-import { useApp } from "@/context/AppContext";
 
 export interface PollSocketPayload {
   poll: Poll;
   results: PollResults;
 }
 
+const BASE = import.meta.env.VITE_API_URL || "http://localhost:8787";
+
+let sharedSocket: Socket | null = null;
+let refCount = 0;
+
+function getSocket(): Socket {
+  if (!sharedSocket || !sharedSocket.connected) {
+    sharedSocket = io(BASE, { transports: ["websocket", "polling"] });
+  }
+  return sharedSocket;
+}
+
 export function useSocket(
-  pollId?: string,
-  onPollUpdate?: (payload: PollSocketPayload) => void,
-  code?: string,
+  pollId: string | undefined | null,
+  onUpdate: (payload: PollSocketPayload) => void
 ) {
-  const { state, dispatch } = useApp();
-
-  const socket = useMemo(
-    () => {
-      if (isLocalOnlyMode()) return null;
-      return io(API_URL, {
-        transports: ["websocket", "polling"],
-        autoConnect: true,
-      });
-    },
-    [],
-  );
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
 
   useEffect(() => {
-    if (!socket) return;
-    const handleConnect = () => dispatch({ type: "SET_SOCKET_CONNECTED", payload: true });
-    const handleDisconnect = () => dispatch({ type: "SET_SOCKET_CONNECTED", payload: false });
+    if (!pollId) return;
+    refCount++;
+    const socket = getSocket();
 
-    socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
-    socket.on("connect_error", handleDisconnect);
+    const handler = (payload: PollSocketPayload) => {
+      onUpdateRef.current(payload);
+    };
+
+    socket.emit("joinPoll", { pollId });
+    socket.on("pollUpdate", handler);
 
     return () => {
-      socket.off("connect", handleConnect);
-      socket.off("disconnect", handleDisconnect);
-      socket.off("connect_error", handleDisconnect);
-      socket.disconnect();
+      socket.off("pollUpdate", handler);
+      refCount--;
+      if (refCount <= 0 && sharedSocket) {
+        sharedSocket.disconnect();
+        sharedSocket = null;
+        refCount = 0;
+      }
     };
-  }, [dispatch, socket]);
+  }, [pollId]);
+}
+
+export function useSocketByCode(
+  code: string | undefined | null,
+  onUpdate: (payload: PollSocketPayload) => void,
+  onError?: (msg: string) => void
+) {
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
 
   useEffect(() => {
-    if (!socket) return;
-    if (!pollId && !code) return;
-    socket.emit("joinPoll", { pollId, code });
+    if (!code) return;
+    refCount++;
+    const socket = getSocket();
 
-    const update = (payload: PollSocketPayload) => {
-      dispatch({ type: "UPDATE_POLL", payload: payload.poll });
-      onPollUpdate?.(payload);
+    const updateHandler = (payload: PollSocketPayload) => {
+      onUpdateRef.current(payload);
+    };
+    const errorHandler = ({ message }: { message: string }) => {
+      onError?.(message);
     };
 
-    socket.on("pollUpdated", update);
-    socket.on("voteUpdate", update);
-    socket.on("wordCloudUpdate", update);
-    socket.on("qaUpdate", update);
-    socket.on("leaderboardUpdate", update);
-    socket.on("statusUpdate", update);
+    socket.emit("joinByCode", { code });
+    socket.on("pollUpdate", updateHandler);
+    socket.on("error", errorHandler);
 
     return () => {
-      socket.emit("leavePoll", { pollId });
-      socket.off("pollUpdated", update);
-      socket.off("voteUpdate", update);
-      socket.off("wordCloudUpdate", update);
-      socket.off("qaUpdate", update);
-      socket.off("leaderboardUpdate", update);
-      socket.off("statusUpdate", update);
+      socket.off("pollUpdate", updateHandler);
+      socket.off("error", errorHandler);
+      refCount--;
+      if (refCount <= 0 && sharedSocket) {
+        sharedSocket.disconnect();
+        sharedSocket = null;
+        refCount = 0;
+      }
     };
-  }, [code, dispatch, onPollUpdate, pollId, socket]);
-
-  return { connected: state.socketConnected, socket };
+  }, [code]);
 }

@@ -1,4 +1,6 @@
-node_modules
+node_modules/
+dist/
 .env
-.expo
-.rork
+*.local
+.DS_Store
+server/data/omnipoll.json
