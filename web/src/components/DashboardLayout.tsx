@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { BarChart3, PlusCircle, Home, LogOut, Menu, X } from "lucide-react";
+import { BarChart3, PlusCircle, List, LogOut, Menu, X, Wifi } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -8,14 +8,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const nav = [
-    { label: "Dashboard", href: "/dashboard/polls", icon: BarChart3 },
-    { label: "Create Poll", href: "/create", icon: PlusCircle },
+    { label: "Dashboard",  href: "/dashboard/polls", icon: BarChart3 },
+    { label: "All Polls",  href: "/polls",            icon: List },
+    { label: "Create Poll",href: "/create",           icon: PlusCircle },
   ];
 
-  const isActive = (href: string) => location.pathname.startsWith(href);
+  const isActive = (href: string) => location.pathname === href || location.pathname.startsWith(href + "/");
 
   return (
     <div className="min-h-screen bg-warm-bg">
@@ -27,7 +28,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </Link>
 
           {/* Desktop nav */}
-          <div className="hidden sm:flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-1">
             {nav.map((n) => (
               <Link key={n.href} to={n.href}>
                 <Button
@@ -40,12 +41,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </Button>
               </Link>
             ))}
-            <div className="pl-2 border-l border-clay/30 flex items-center gap-2">
-              <span className="text-sm text-slate">{user?.name}</span>
+            <div className="pl-2 ml-1 border-l border-clay/30 flex items-center gap-2">
+              <span className="text-sm text-slate hidden md:block">{user?.name}</span>
               <Button
-                variant="ghost"
-                size="sm"
+                variant="ghost" size="sm"
                 onClick={() => { signOut(); navigate("/"); }}
+                title="Sign out"
               >
                 <LogOut size={14} />
               </Button>
@@ -54,9 +55,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Mobile toggle */}
           <Button
-            variant="ghost"
-            size="sm"
-            className="sm:hidden"
+            variant="ghost" size="sm" className="sm:hidden"
             onClick={() => setMobileOpen((v) => !v)}
           >
             {mobileOpen ? <X size={18} /> : <Menu size={18} />}
@@ -70,31 +69,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {nav.map((n) => (
             <Link key={n.href} to={n.href} onClick={() => setMobileOpen(false)}>
               <Button
-                variant={isActive(n.href) ? "default" : "ghost"}
-                size="sm"
+                variant={isActive(n.href) ? "default" : "ghost"} size="sm"
                 className={`w-full justify-start ${isActive(n.href) ? "bg-terracotta text-white" : "text-slate"}`}
               >
-                <n.icon size={14} className="mr-2" />
-                {n.label}
+                <n.icon size={14} className="mr-2" />{n.label}
               </Button>
             </Link>
           ))}
           <Button
-            variant="ghost"
-            size="sm"
+            variant="ghost" size="sm"
             className="w-full justify-start text-slate"
             onClick={() => { signOut(); navigate("/"); }}
           >
-            <LogOut size={14} className="mr-2" />
-            Sign Out
+            <LogOut size={14} className="mr-2" /> Sign Out
           </Button>
         </div>
       )}
 
-      {/* Content */}
-      <main className="max-w-6xl mx-auto px-4 py-8">
-        {children}
-      </main>
+      {/* Page content */}
+      <main className="max-w-6xl mx-auto px-4 py-8">{children}</main>
     </div>
   );
 }

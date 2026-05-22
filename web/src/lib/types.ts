@@ -27,6 +27,19 @@ export interface QAQuestion {
   createdAt: number;
 }
 
+export interface QuizSubmission {
+  participantId: string;
+  participantName?: string;
+  score: number;
+  answers: Array<{
+    questionId: string;
+    selected: string | null;
+    isCorrect: boolean;
+    points: number;
+  }>;
+  completedAt: number;
+}
+
 export interface PollResponse {
   id: string;
   participantId?: string;
@@ -55,13 +68,20 @@ export interface Poll {
   id: string;
   code: string;
   title: string;
+  description?: string;
+  category?: string;
   type: PollType;
   question: string;
   settings: PollSettings;
   options: PollOption[];
   quizQuestions: QuizQuestion[];
   responses: PollResponse[];
+  /** Q&A questions array */
   qaQuestions: QAQuestion[];
+  /** Alias for qaQuestions — kept for backward compatibility */
+  qnaQuestions?: QAQuestion[];
+  /** Quiz submissions summary */
+  quizSubmissions?: QuizSubmission[];
   status: PollStatus;
   creatorId?: string;
   participants: string[];

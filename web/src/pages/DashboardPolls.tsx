@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Plus, Copy, Pause, Play, Square, Trash2, BarChart3 } from "lucide-react";
+import { Plus, Copy, Pause, Play, Square, Trash2, BarChart3, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import DashboardLayout from "@/components/DashboardLayout";
 import { getPolls, updatePollStatus, deletePoll } from "@/lib/api";

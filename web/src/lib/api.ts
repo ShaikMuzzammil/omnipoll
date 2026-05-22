@@ -13,19 +13,28 @@ export async function apiFetch(path: string, opts: RequestInit = {}) {
   return res.json();
 }
 
-// Auth
+// ── Auth ────────────────────────────────────────────────────
 export const signUp = (body: { name: string; email: string; password: string }) =>
   apiFetch("/api/auth/signup", { method: "POST", body: JSON.stringify(body) });
+
+/** Alias for signUp — backward compatibility */
+export const signup = signUp;
 
 export const signIn = (body: { email: string; password: string }) =>
   apiFetch("/api/auth/signin", { method: "POST", body: JSON.stringify(body) });
 
-// Polls
+/** Alias for signIn */
+export const login = signIn;
+
+// ── Polls ───────────────────────────────────────────────────
 export const createPoll = (body: Record<string, unknown>) =>
   apiFetch("/api/polls", { method: "POST", body: JSON.stringify(body) });
 
 export const getPolls = (creatorId?: string) =>
   apiFetch(`/api/polls${creatorId ? `?creatorId=${creatorId}` : ""}`);
+
+/** Alias for getPolls — backward compatibility */
+export const listPolls = getPolls;
 
 export const getPoll = (id: string) => apiFetch(`/api/polls/${id}`);
 
@@ -42,22 +51,37 @@ export const updatePollStatus = (id: string, status: string) =>
 export const deletePoll = (id: string) =>
   apiFetch(`/api/polls/${id}`, { method: "DELETE" });
 
-// Q&A
-export const addQAQuestion = (id: string, body: { questionText: string; participantId: string }) =>
-  apiFetch(`/api/polls/${id}/qa`, { method: "POST", body: JSON.stringify(body) });
+export const updatePoll = (id: string, body: Record<string, unknown>) =>
+  apiFetch(`/api/polls/${id}`, { method: "PUT", body: JSON.stringify(body) });
+
+// ── Q&A ─────────────────────────────────────────────────────
+export const addQAQuestion = (
+  id: string,
+  body: { questionText: string; participantId: string }
+) => apiFetch(`/api/polls/${id}/qa`, { method: "POST", body: JSON.stringify(body) });
 
 export const upvoteQAQuestion = (id: string, questionId: string) =>
   apiFetch(`/api/polls/${id}/qa/${questionId}/upvote`, { method: "PUT" });
 
-// Quiz
+export const moderateQAQuestion = (
+  id: string,
+  questionId: string,
+  action: "answer" | "highlight" | "dismiss"
+) =>
+  apiFetch(`/api/polls/${id}/qa/${questionId}/moderate`, {
+    method: "PATCH",
+    body: JSON.stringify({ action }),
+  });
+
+// ── Quiz ─────────────────────────────────────────────────────
 export const submitQuizAnswer = (id: string, body: Record<string, unknown>) =>
   apiFetch(`/api/polls/${id}/quiz/submit`, { method: "POST", body: JSON.stringify(body) });
 
 export const getLeaderboard = (id: string) =>
   apiFetch(`/api/polls/${id}/quiz/leaderboard`);
 
-// Export
+// ── Export ───────────────────────────────────────────────────
 export const csvExportUrl = (id: string) => `${BASE}/api/polls/${id}/export/csv`;
 
 export const participantUrl = (code: string) =>
-  `${window.location.origin}${window.location.pathname}#poll/${code}`;
+  `${window.location.origin}${window.location.pathname.replace(/\/$/, "")}/poll/${code}`;
