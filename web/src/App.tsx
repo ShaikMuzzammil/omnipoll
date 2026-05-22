@@ -3,12 +3,15 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 
+const Index       = lazy(() => import("@/pages/Index"));
 const Home        = lazy(() => import("@/pages/Home"));
 const Auth        = lazy(() => import("@/pages/Auth"));
 const Signup      = lazy(() => import("@/pages/Signup"));
+const Join        = lazy(() => import("@/pages/Join"));
 const Create      = lazy(() => import("@/pages/Create"));
-const Polls       = lazy(() => import("@/pages/Polls"));
+const Dashboard   = lazy(() => import("@/pages/Dashboard"));
 const DashboardPolls = lazy(() => import("@/pages/DashboardPolls"));
+const Polls       = lazy(() => import("@/pages/Polls"));
 const Results     = lazy(() => import("@/pages/Results"));
 const Present     = lazy(() => import("@/pages/Present"));
 const PollView    = lazy(() => import("@/pages/PollView"));
@@ -37,39 +40,41 @@ export default function App() {
       />
       <Suspense fallback={<Loader />}>
         <Routes>
-          {/* Public */}
-          <Route path="/"            element={<Home />} />
-          <Route path="/auth"        element={<Auth />} />
-          <Route path="/signup"      element={<Signup />} />
+          {/* Public landing pages */}
+          <Route path="/"         element={<Index />} />
+          <Route path="/home"     element={<Home />} />
+          <Route path="/auth"     element={<Auth />} />
+          <Route path="/signup"   element={<Signup />} />
+          <Route path="/join"     element={<Join />} />
+          <Route path="/join/:code" element={<Join />} />
 
-          {/* Participant join routes */}
+          {/* Participant routes */}
           <Route path="/poll/:code"        element={<PollView />} />
           <Route path="/participate/:code" element={<Participate />} />
-          <Route path="/join/:code"        element={<Participate />} />
 
           {/* Protected creator routes */}
           <Route path="/create"
             element={<RequireAuth><Create /></RequireAuth>} />
 
-          {/* Dashboard — both /dashboard and /dashboard/polls */}
+          {/* Dashboard routes */}
           <Route path="/dashboard"
             element={<Navigate to="/dashboard/polls" replace />} />
           <Route path="/dashboard/polls"
             element={<RequireAuth><DashboardPolls /></RequireAuth>} />
-
-          {/* Polls list page */}
-          <Route path="/polls"
-            element={<RequireAuth><Polls /></RequireAuth>} />
-
-          {/* Results / analytics */}
           <Route path="/dashboard/:id"
             element={<RequireAuth><Results /></RequireAuth>} />
+
+          {/* Additional dashboard aliases */}
+          <Route path="/polls"
+            element={<RequireAuth><Polls /></RequireAuth>} />
           <Route path="/results/:id"
             element={<RequireAuth><Results /></RequireAuth>} />
-
-          {/* Presenter / moderation view */}
           <Route path="/present/:id"
             element={<RequireAuth><Present /></RequireAuth>} />
+
+          {/* Alt dashboard page */}
+          <Route path="/my-polls"
+            element={<RequireAuth><Dashboard /></RequireAuth>} />
 
           {/* Catch-all */}
           <Route path="*" element={<Navigate to="/" replace />} />

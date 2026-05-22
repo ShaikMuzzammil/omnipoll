@@ -85,3 +85,25 @@ export const csvExportUrl = (id: string) => `${BASE}/api/polls/${id}/export/csv`
 
 export const participantUrl = (code: string) =>
   `${window.location.origin}${window.location.pathname.replace(/\/$/, "")}/poll/${code}`;
+
+// ── Session helpers (AppContext compatibility) ───────────────
+const SESSION_KEY = "omnipoll_session";
+
+export function readSession(): Record<string, unknown> | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+export function clearSession(): void {
+  localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem("omnipoll_auth");
+}
+
+export function writeSession(data: Record<string, unknown>): void {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+}
+
+// ── getPollByCode alias ──────────────────────────────────────
+export const getPollByCode = joinByCode;

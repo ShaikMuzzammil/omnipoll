@@ -86,6 +86,7 @@ export interface Poll {
   creatorId?: string;
   participants: string[];
   createdAt: number;
+  updatedAt?: number;
   expiresAt: number | null;
 }
 
