@@ -52,8 +52,9 @@
     box-sizing: border-box;
   }
   body {
-    @apply bg-background text-foreground font-inter antialiased;
+    @apply font-inter antialiased;
     background-color: hsl(42, 33%, 93%);
+    color: #2c2c2c;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-playfair;
