@@ -6,32 +6,55 @@ import { cn } from "@/lib/utils"
 
 // Self-contained OTP input — no external 'input-otp' package needed
 
-interface InputOTPProps extends React.HTMLAttributes<HTMLDivElement> {
+// Use a separate interface that does NOT extend HTMLAttributes to avoid
+// conflicting onChange types (TS2430)
+interface InputOTPProps {
+  className?: string;
+  style?: React.CSSProperties;
   maxLength?: number;
   value?: string;
   onChange?: (value: string) => void;
   disabled?: boolean;
+  children?: React.ReactNode;
+  id?: string;
+  name?: string;
+  autoFocus?: boolean;
+  "aria-label"?: string;
 }
 
-const InputOTPContext = React.createContext<{
-  slots: { char: string | null; hasFakeCaret: boolean; isActive: boolean }[];
-}>({ slots: [] });
+interface SlotState {
+  char: string | null;
+  hasFakeCaret: boolean;
+  isActive: boolean;
+}
+
+const InputOTPContext = React.createContext<{ slots: SlotState[] }>({ slots: [] });
 
 const InputOTP = React.forwardRef<HTMLDivElement, InputOTPProps>(
-  ({ className, maxLength = 6, value = "", onChange, disabled, children, ...props }, ref) => {
+  (
+    {
+      className, maxLength = 6, value = "", onChange,
+      disabled, children, autoFocus, ...props
+    },
+    ref
+  ) => {
     const [internalValue, setInternalValue] = React.useState(value);
-    const [activeIndex, setActiveIndex] = React.useState(0);
+    const [activeIndex, setActiveIndex] = React.useState(-1);
     const inputRef = React.useRef<HTMLInputElement>(null);
 
-    const currentValue = onChange ? value : internalValue;
+    const currentValue = onChange !== undefined ? value : internalValue;
 
-    const slots = Array.from({ length: maxLength }, (_, i) => ({
+    React.useEffect(() => {
+      if (autoFocus) inputRef.current?.focus();
+    }, [autoFocus]);
+
+    const slots: SlotState[] = Array.from({ length: maxLength }, (_, i) => ({
       char: currentValue[i] ?? null,
-      hasFakeCaret: i === currentValue.length,
+      hasFakeCaret: i === currentValue.length && activeIndex >= 0,
       isActive: i === activeIndex,
     }));
 
-    const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const v = e.target.value.replace(/\D/g, "").slice(0, maxLength);
       if (onChange) onChange(v);
       else setInternalValue(v);
@@ -44,18 +67,20 @@ const InputOTP = React.forwardRef<HTMLDivElement, InputOTPProps>(
           ref={ref}
           className={cn("relative flex items-center gap-2", className)}
           onClick={() => inputRef.current?.focus()}
-          {...props}
+          {...(props as React.HTMLAttributes<HTMLDivElement>)}
         >
           <input
             ref={inputRef}
             type="text"
             inputMode="numeric"
+            pattern="[0-9]*"
             value={currentValue}
-            onChange={handleInput}
+            onChange={handleChange}
             disabled={disabled}
             maxLength={maxLength}
-            className="absolute inset-0 opacity-0 cursor-default"
-            onFocus={() => setActiveIndex(currentValue.length)}
+            aria-label={(props as { "aria-label"?: string })["aria-label"] ?? "One-time password"}
+            className="absolute inset-0 opacity-0 w-full h-full cursor-default select-none"
+            onFocus={() => setActiveIndex(currentValue.length < maxLength ? currentValue.length : maxLength - 1)}
             onBlur={() => setActiveIndex(-1)}
           />
           {children}
@@ -73,31 +98,34 @@ const InputOTPGroup = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
 );
 InputOTPGroup.displayName = "InputOTPGroup";
 
-const InputOTPSlot = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { index: number }>(
-  ({ index, className, ...props }, ref) => {
-    const { slots } = React.useContext(InputOTPContext);
-    const slot = slots[index] ?? { char: null, hasFakeCaret: false, isActive: false };
+const InputOTPSlot = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement> & { index: number }
+>(({ index, className, ...props }, ref) => {
+  const { slots } = React.useContext(InputOTPContext);
+  const slot = slots[index] ?? { char: null, hasFakeCaret: false, isActive: false };
 
-    return (
-      <div
-        ref={ref}
-        className={cn(
-          "relative flex h-10 w-10 items-center justify-center border-y border-r border-clay/40 text-sm transition-all first:rounded-l-xl first:border-l last:rounded-r-xl",
-          slot.isActive && "z-10 ring-2 ring-terracotta ring-offset-background",
-          className
-        )}
-        {...props}
-      >
-        {slot.char}
-        {slot.hasFakeCaret && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="animate-caret-blink h-4 w-px bg-charcoal duration-1000" />
-          </div>
-        )}
-      </div>
-    );
-  }
-);
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "relative flex h-10 w-10 items-center justify-center",
+        "border-y border-r border-clay/40 text-sm transition-all",
+        "first:rounded-l-xl first:border-l last:rounded-r-xl",
+        slot.isActive && "z-10 ring-2 ring-terracotta ring-offset-1",
+        className
+      )}
+      {...props}
+    >
+      {slot.char}
+      {slot.hasFakeCaret && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="h-4 w-px animate-pulse bg-charcoal" />
+        </div>
+      )}
+    </div>
+  );
+});
 InputOTPSlot.displayName = "InputOTPSlot";
 
 const InputOTPSeparator = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(

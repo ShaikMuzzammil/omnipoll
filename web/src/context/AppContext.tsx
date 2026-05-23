@@ -25,7 +25,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (session?.user) {
       setUserState(session.user as User);
     } else {
-      // Fallback: check omnipoll_auth key
       try {
         const auth = JSON.parse(localStorage.getItem("omnipoll_auth") || "null");
         if (auth) setUserState(auth);
@@ -52,7 +51,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useAppContext() {
+/** Named export — used as: import { useApp } from "@/context/AppContext" */
+export function useApp(): AppContextValue {
+  return useContext(AppContext);
+}
+
+/** Alias hook */
+export function useAppContext(): AppContextValue {
   return useContext(AppContext);
 }
 
