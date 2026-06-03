@@ -1,98 +1,61 @@
-import React, { Suspense, lazy } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { Toaster } from "sonner";
-import { useAuth } from "@/hooks/useAuth";
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppProvider } from "@/context/AppContext";
+import Index from "@/pages/Index";
+import Login from "@/pages/Login";
+import Signup from "@/pages/Signup";
+import Dashboard from "@/pages/Dashboard";
+import Polls from "@/pages/Polls";
+import CreatePoll from "@/pages/CreatePoll";
+import Present from "@/pages/Present";
+import Join from "@/pages/Join";
+import Participate from "@/pages/Participate";
+import Contact from "@/pages/Contact";
+import Settings from "@/pages/Settings";
+import Analytics from "@/pages/Analytics";
+import Moderation from "@/pages/Moderations";
+import Results from "@/pages/Results";
+import NotFound from "@/pages/NotFound";
 
-const Index        = lazy(() => import("@/pages/Index"));
-const Home         = lazy(() => import("@/pages/Home"));
-const Auth         = lazy(() => import("@/pages/Auth"));
-const Signup       = lazy(() => import("@/pages/Signup"));
-const Login        = lazy(() => import("@/pages/Login"));
-const Join         = lazy(() => import("@/pages/Join"));
-const Create       = lazy(() => import("@/pages/Create"));
-const CreatePoll   = lazy(() => import("@/pages/CreatePoll"));
-const Dashboard    = lazy(() => import("@/pages/Dashboard"));
-const DashboardPolls = lazy(() => import("@/pages/DashboardPolls"));
-const Polls        = lazy(() => import("@/pages/Polls"));
-const Results      = lazy(() => import("@/pages/Results"));
-const Present      = lazy(() => import("@/pages/Present"));
-const PollView     = lazy(() => import("@/pages/PollView"));
-const Participate  = lazy(() => import("@/pages/Participate"));
-const Moderations  = lazy(() => import("@/pages/Moderations"));
-const Settings     = lazy(() => import("@/pages/Settings"));
+const queryClient = new QueryClient();
 
-function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
-  return <>{children}</>;
-}
-
-function Loader() {
+function App() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-warm-bg">
-      <div className="animate-spin w-8 h-8 border-2 border-terracotta border-t-transparent rounded-full" />
-    </div>
+    <QueryClientProvider client={queryClient}>
+      <AppProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/auth/login" element={<Login />} />
+              <Route path="/auth/signup" element={<Signup />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard/polls" element={<Polls />} />
+              <Route path="/dashboard/polls/create" element={<CreatePoll />} />
+              <Route path="/dashboard/polls/:id/edit" element={<CreatePoll />} />
+              <Route path="/dashboard/polls/:id/results" element={<Results />} />
+              <Route path="/dashboard/:id" element={<Results />} />
+              <Route path="/present/:id" element={<Present />} />
+              <Route path="/join" element={<Join />} />
+              <Route path="/join/:code" element={<Join />} />
+              <Route path="/p/:code" element={<Participate />} />
+              <Route path="/poll/:code" element={<Participate />} />
+              <Route path="/contact" element={<Contact />} />
+              <Route path="/dashboard/settings" element={<Settings />} />
+              <Route path="/dashboard/analytics" element={<Analytics />} />
+              <Route path="/dashboard/moderation" element={<Moderation />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </AppProvider>
+    </QueryClientProvider>
   );
 }
 
-export default function App() {
-  return (
-    <AppProvider>
-      <BrowserRouter>
-        <Toaster
-          position="top-right"
-          toastOptions={{ style: { fontFamily: "Inter, sans-serif", fontSize: "0.875rem" } }}
-        />
-        <Suspense fallback={<Loader />}>
-          <Routes>
-            {/* Public */}
-            <Route path="/"           element={<Index />} />
-            <Route path="/home"       element={<Home />} />
-            <Route path="/auth"       element={<Auth />} />
-            <Route path="/login"      element={<Login />} />
-            <Route path="/signup"     element={<Signup />} />
-            <Route path="/join"       element={<Join />} />
-            <Route path="/join/:code" element={<Join />} />
-
-            {/* Participant */}
-            <Route path="/poll/:code"        element={<PollView />} />
-            <Route path="/participate/:code" element={<Participate />} />
-
-            {/* Protected */}
-            <Route path="/create"
-              element={<RequireAuth><Create /></RequireAuth>} />
-            <Route path="/create-poll"
-              element={<RequireAuth><CreatePoll /></RequireAuth>} />
-
-            {/* Dashboard */}
-            <Route path="/dashboard"
-              element={<Navigate to="/dashboard/polls" replace />} />
-            <Route path="/dashboard/polls"
-              element={<RequireAuth><DashboardPolls /></RequireAuth>} />
-            <Route path="/dashboard/:id"
-              element={<RequireAuth><Results /></RequireAuth>} />
-
-            {/* Extras */}
-            <Route path="/polls"
-              element={<RequireAuth><Polls /></RequireAuth>} />
-            <Route path="/my-polls"
-              element={<RequireAuth><Dashboard /></RequireAuth>} />
-            <Route path="/results/:id"
-              element={<RequireAuth><Results /></RequireAuth>} />
-            <Route path="/present/:id"
-              element={<RequireAuth><Present /></RequireAuth>} />
-            <Route path="/moderation"
-              element={<RequireAuth><Moderations /></RequireAuth>} />
-            <Route path="/moderations"
-              element={<RequireAuth><Moderations /></RequireAuth>} />
-            <Route path="/settings"
-              element={<RequireAuth><Settings /></RequireAuth>} />
-
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
-    </AppProvider>
-  );
-}
+export default App;

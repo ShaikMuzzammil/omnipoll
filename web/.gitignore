@@ -1,6 +1,38 @@
-node_modules/
-dist/
+# dependencies
+node_modules
+
+# build
+dist
+dist-ssr
+server/data
+
+# env
 .env
 *.local
+
+# Native
+ios/
+android/
+core
+
+# Expo
+.expo
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# macOS
 .DS_Store
-server/data/omnipoll.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
