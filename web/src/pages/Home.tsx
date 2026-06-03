@@ -5,33 +5,32 @@ import { ArrowRight, BarChart3, Cloud, HelpCircle, Trophy, Star, Zap } from "luc
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
-import { getPollByCode } from "@/lib/api";
+import { joinByCode } from "@/lib/api";
 import { toast } from "sonner";
 
 const POLL_TYPES = [
   { icon: BarChart3, label: "Multiple Choice", desc: "Real-time vote bars & percentages", color: "bg-terracotta/10 text-terracotta" },
-  { icon: Cloud,     label: "Word Cloud",      desc: "Live visual word aggregation",       color: "bg-sage/10 text-sage" },
-  { icon: HelpCircle,label: "Q&A Session",     desc: "Questions ranked by upvotes",        color: "bg-amber-100 text-amber-700" },
-  { icon: Trophy,    label: "Live Quiz",        desc: "Timed scoring & leaderboard",        color: "bg-blue-50 text-blue-600" },
-  { icon: Star,      label: "Rating Scale",     desc: "Customizable 1–10 scale",            color: "bg-purple-50 text-purple-600" },
-  { icon: Zap,       label: "AI Insights",      desc: "Sentiment & theme analysis",         color: "bg-pink-50 text-pink-600" },
+  { icon: Cloud, label: "Word Cloud", desc: "Live visual word aggregation", color: "bg-sage/10 text-sage" },
+  { icon: HelpCircle, label: "Q&A Session", desc: "Questions ranked by upvotes", color: "bg-amber-100 text-amber-700" },
+  { icon: Trophy, label: "Live Quiz", desc: "Timed scoring & leaderboard", color: "bg-blue-50 text-blue-600" },
+  { icon: Star, label: "Rating Scale", desc: "Customizable 1–10 scale", color: "bg-purple-50 text-purple-600" },
+  { icon: Zap, label: "AI Insights", desc: "Sentiment & theme analysis", color: "bg-pink-50 text-pink-600" },
 ];
 
-export default function Index() {
+export default function Home() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [code, setCode] = useState("");
   const [joining, setJoining] = useState(false);
 
   const handleJoin = async () => {
-    const trimmed = code.trim().toUpperCase();
-    if (!trimmed) { toast.error("Enter a join code"); return; }
+    if (!code.trim()) { toast.error("Enter a join code"); return; }
     setJoining(true);
     try {
-      const { poll } = await getPollByCode(trimmed);
+      const { poll } = await joinByCode(code.trim().toUpperCase());
       navigate(`/poll/${poll.code}`);
     } catch {
-      toast.error("Poll not found — check your code");
+      toast.error("Poll not found – check your code");
     } finally {
       setJoining(false);
     }
@@ -61,7 +60,7 @@ export default function Index() {
                   <Link to="/auth?mode=signin">Sign In</Link>
                 </Button>
                 <Button size="sm" asChild className="bg-terracotta hover:bg-orange-600 text-white">
-                  <Link to="/signup">Get Started</Link>
+                  <Link to="/auth?mode=signup">Get Started</Link>
                 </Button>
               </>
             )}
@@ -80,11 +79,11 @@ export default function Index() {
             <span className="text-terracotta">live</span>
           </h1>
           <p className="text-slate text-lg md:text-xl max-w-2xl mx-auto mb-10">
-            Create polls, quizzes, word clouds, and Q&A sessions. Watch results update in real-time.
+            Create polls, quizzes, word clouds, and Q&A sessions. Watch results update in real-time. Export everything.
           </p>
         </motion.div>
 
-        {/* Join code input */}
+        {/* Join code */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -99,13 +98,17 @@ export default function Index() {
             className="flex-1 font-mono tracking-widest uppercase bg-warm-white border-clay/40 focus:border-terracotta text-center"
             maxLength={6}
           />
-          <Button onClick={handleJoin} disabled={joining} className="bg-terracotta hover:bg-orange-600 text-white">
+          <Button
+            onClick={handleJoin}
+            disabled={joining}
+            className="bg-terracotta hover:bg-orange-600 text-white"
+          >
             {joining ? "Joining…" : "Join Poll"} <ArrowRight size={14} className="ml-1" />
           </Button>
         </motion.div>
       </section>
 
-      {/* Feature grid */}
+      {/* Poll type cards */}
       <section className="max-w-6xl mx-auto px-4 pb-20">
         <h2 className="font-playfair text-3xl font-bold text-charcoal text-center mb-10">Everything you need</h2>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -115,7 +118,7 @@ export default function Index() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.06 }}
-              className="bg-warm-white rounded-2xl p-6 border border-clay/20 hover:shadow-md hover:-translate-y-0.5 transition-all"
+              className="bg-warm-white rounded-2xl p-6 border border-clay/20 hover:shadow-md transition-all hover:-translate-y-0.5"
             >
               <div className={`w-10 h-10 rounded-xl ${t.color} flex items-center justify-center mb-3`}>
                 <t.icon size={20} />
@@ -133,7 +136,7 @@ export default function Index() {
           <h2 className="font-playfair text-4xl font-bold mb-4">Ready to get started?</h2>
           <p className="text-white/80 mb-8 text-lg">Create your first poll in under a minute.</p>
           <Button asChild size="lg" className="bg-warm-white text-terracotta hover:bg-cream font-semibold">
-            <Link to={user ? "/create" : "/signup"}>
+            <Link to={user ? "/create" : "/auth?mode=signup"}>
               Create Your First Poll <ArrowRight size={16} className="ml-2" />
             </Link>
           </Button>
