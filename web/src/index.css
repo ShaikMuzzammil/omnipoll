@@ -49,10 +49,12 @@
 
 @layer base {
   * {
-    @apply border-border;
+    box-sizing: border-box;
   }
   body {
-    @apply bg-cream text-charcoal font-inter antialiased;
+    @apply font-inter antialiased;
+    background-color: hsl(42, 33%, 93%);
+    color: #2c2c2c;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-playfair;
@@ -64,7 +66,8 @@
     text-wrap: balance;
   }
   .glass {
-    @apply bg-warm-white/80 backdrop-blur-xl;
+    background: rgba(253,249,243,0.8);
+    backdrop-filter: blur(16px);
   }
   .terracotta-glow {
     box-shadow: 0 0 30px rgba(217, 108, 74, 0.2);
@@ -108,4 +111,18 @@
 @keyframes step-fill {
   from { width: 0; }
   to { width: 100%; }
+}
+
+/* Bar fill animation */
+.bar-fill {
+  transition: width 0.6s ease;
+}
+
+/* Fade in */
+.fade-in {
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }

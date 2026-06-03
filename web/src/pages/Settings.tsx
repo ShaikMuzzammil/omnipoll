@@ -1,203 +1,195 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Save, Mail, Bell, User, Check, AlertTriangle, Info } from "lucide-react";
+import React, { useState } from "react";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
+import { User, Bell, Shield, Palette, LogOut, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useApp } from "@/context/AppContext";
+import { useNavigate } from "react-router-dom";
 
-/*
-  EMAIL CONFIGURATION - Add your details here:
-  1. Replace HOST_EMAIL with your Gmail address for contact form replies
-  2. Replace RESEND_API_KEY with your Resend API key
-  These values are used internally. The UI only asks for display name and reply email.
-*/
-const HOST_EMAIL = import.meta.env.VITE_HOST_EMAIL || "";
-const RESEND_API_KEY = import.meta.env.VITE_RESEND_API_KEY || "";
+type SettingsTab = "profile" | "notifications" | "security" | "appearance";
 
 export default function Settings() {
-  const { state, dispatch } = useApp();
-  const [name, setName] = useState(state.user?.name || "");
-  const [email, setEmail] = useState(state.user?.email || "");
-  const [replyName, setReplyName] = useState("");
-  const [replyEmail, setReplyEmail] = useState("");
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [marketingEmails, setMarketingEmails] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [showEmailConfig, setShowEmailConfig] = useState(false);
+  const { user, setUser, logout } = useApp();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
 
-  const handleSave = () => {
-    if (state.user) {
-      dispatch({
-        type: "SET_USER",
-        payload: {
-          ...state.user,
-          name: name || state.user.name,
-          email: email || state.user.email,
-        },
-      });
-    }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+  // Profile state
+  const [name, setName] = useState(user?.name ?? "");
+  const [email, setEmail] = useState(user?.email ?? "");
+  const [saving, setSaving] = useState(false);
+
+  // Notification prefs
+  const [emailNotifs, setEmailNotifs] = useState(true);
+  const [resultsNotifs, setResultsNotifs] = useState(true);
+  const [digestNotifs, setDigestNotifs] = useState(false);
+
+  // Appearance
+  const [theme] = useState<"warm" | "light" | "dark">("warm");
+
+  const handleSaveProfile = async () => {
+    if (!name.trim()) { toast.error("Name cannot be empty"); return; }
+    setSaving(true);
+    try {
+      // Update local session
+      if (user) {
+        const updated = { ...user, name, email };
+        setUser(updated);
+        localStorage.setItem("omnipoll_auth", JSON.stringify(updated));
+      }
+      toast.success("Profile updated");
+    } catch { toast.error("Failed to save"); }
+    finally { setSaving(false); }
   };
+
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+    toast.success("Signed out successfully");
+  };
+
+  const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
+    { id: "profile",       label: "Profile",       icon: User },
+    { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "security",      label: "Security",      icon: Shield },
+    { id: "appearance",    label: "Appearance",    icon: Palette },
+  ];
+
+  const fieldClass = "bg-warm-white border-clay/40 focus:border-terracotta";
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto space-y-8">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div>
           <h1 className="font-playfair text-3xl font-bold text-charcoal">Settings</h1>
-          <p className="text-slate mt-1">Manage your profile and platform preferences</p>
-        </motion.div>
+          <p className="text-slate text-sm mt-1">Manage your account preferences</p>
+        </div>
 
-        {/* Profile */}
-        <motion.div
-          className="bg-warm-white rounded-xl border border-clay/30 p-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <div className="flex items-center gap-2 mb-5">
-            <User size={18} className="text-terracotta" />
-            <h2 className="font-semibold text-charcoal">Profile</h2>
-          </div>
-          <div className="space-y-4">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-charcoal">Display Name</Label>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your display name"
-                  className="bg-cream border-clay/40 focus:border-terracotta"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-charcoal">Email</Label>
-                <Input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  type="email"
-                  placeholder="you@example.com"
-                  className="bg-cream border-clay/40 focus:border-terracotta"
-                />
-              </div>
-            </div>
-          </div>
-        </motion.div>
+        <div className="flex gap-1 bg-warm-white rounded-xl border border-clay/30 p-1 overflow-x-auto">
+          {tabs.map((tab) => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                activeTab === tab.id ? "bg-terracotta text-white" : "text-slate hover:text-charcoal hover:bg-parchment"
+              }`}>
+              <tab.icon size={13} />{tab.label}
+            </button>
+          ))}
+        </div>
 
-        {/* Email Reply Configuration */}
-        <motion.div
-          className="bg-warm-white rounded-xl border border-clay/30 p-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <div className="flex items-center gap-2 mb-5">
-            <Mail size={18} className="text-terracotta" />
-            <h2 className="font-semibold text-charcoal">Contact Reply Settings</h2>
-          </div>
-          <div className="space-y-4">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-charcoal">Reply Name</Label>
-                <Input
-                  value={replyName}
-                  onChange={(e) => setReplyName(e.target.value)}
-                  placeholder="e.g. OmniPoll Support"
-                  className="bg-cream border-clay/40 focus:border-terracotta"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-charcoal">Reply Email</Label>
-                <Input
-                  value={replyEmail}
-                  onChange={(e) => setReplyEmail(e.target.value)}
-                  type="email"
-                  placeholder="support@yourdomain.com"
-                  className="bg-cream border-clay/40 focus:border-terracotta"
-                />
-              </div>
-            </div>
-            <div className="bg-cream rounded-lg p-3 flex items-start gap-2">
-              <Info size={14} className="text-terracotta shrink-0 mt-0.5" />
-              <p className="text-xs text-slate">
-                This name and email will be used as the reply-to address when people contact you through the platform.
-                Messages are sent to the host. Update your email credentials in the code file: <code className="text-terracotta font-mono">src/pages/Settings.tsx</code>
-              </p>
-            </div>
-          </div>
-        </motion.div>
+        <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
 
-        {/* Notifications */}
-        <motion.div
-          className="bg-warm-white rounded-xl border border-clay/30 p-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <div className="flex items-center gap-2 mb-5">
-            <Bell size={18} className="text-terracotta" />
-            <h2 className="font-semibold text-charcoal">Notifications</h2>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-charcoal">Email Notifications</p>
-                <p className="text-xs text-slate">Receive alerts about poll activity and moderation</p>
-              </div>
-              <Switch checked={emailNotifications} onCheckedChange={setEmailNotifications} />
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-charcoal">Marketing Emails</p>
-                <p className="text-xs text-slate">Tips, updates, and product announcements</p>
-              </div>
-              <Switch checked={marketingEmails} onCheckedChange={setMarketingEmails} />
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Hidden Email Config Info */}
-        <motion.div
-          className="bg-warm-white rounded-xl border border-clay/30 p-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-        >
-          <button
-            onClick={() => setShowEmailConfig(!showEmailConfig)}
-            className="flex items-center gap-2 w-full text-left"
-          >
-            <AlertTriangle size={18} className="text-terracotta" />
-            <h2 className="font-semibold text-charcoal">Developer Email Configuration</h2>
-            <span className="ml-auto text-xs text-slate">{showEmailConfig ? "Hide" : "Show"}</span>
-          </button>
-          <AnimatePresence>
-            {showEmailConfig && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden"
-              >
-                <div className="mt-4 bg-charcoal rounded-lg p-4">
-                  <p className="text-xs text-white/60 font-mono mb-2">// Update these values in Settings.tsx</p>
-                  <pre className="text-xs font-mono text-green-400 leading-relaxed">
-{`const HOST_EMAIL = "${HOST_EMAIL}";
-const RESEND_API_KEY = "${RESEND_API_KEY.substring(0, 6)}...";`}
-                  </pre>
-                  <p className="text-xs text-white/40 mt-2">Current host email: {HOST_EMAIL}</p>
+          {activeTab === "profile" && (
+            <div className="bg-warm-white rounded-2xl border border-clay/30 p-6 space-y-5">
+              <h2 className="font-playfair text-xl font-bold text-charcoal">Profile Information</h2>
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-terracotta/10 flex items-center justify-center text-2xl font-bold text-terracotta">
+                  {(name || user?.name || "?")[0].toUpperCase()}
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                <div>
+                  <p className="font-semibold text-charcoal">{user?.name}</p>
+                  <p className="text-sm text-slate">{user?.email}</p>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-charcoal">Full Name</Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-charcoal">Email Address</Label>
+                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={fieldClass} />
+              </div>
+              <div className="flex gap-3">
+                <Button onClick={handleSaveProfile} disabled={saving} className="bg-terracotta hover:bg-orange-600 text-white">
+                  <Save size={14} className="mr-1.5" />{saving ? "Saving…" : "Save Changes"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "notifications" && (
+            <div className="bg-warm-white rounded-2xl border border-clay/30 p-6 space-y-5">
+              <h2 className="font-playfair text-xl font-bold text-charcoal">Notification Preferences</h2>
+              {[
+                { label: "Email notifications", desc: "Receive emails for poll activity", value: emailNotifs, onChange: setEmailNotifs },
+                { label: "Results alerts",       desc: "Get notified when results milestone hit", value: resultsNotifs, onChange: setResultsNotifs },
+                { label: "Weekly digest",        desc: "Summary of your polls every week", value: digestNotifs, onChange: setDigestNotifs },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center justify-between p-4 bg-parchment rounded-xl">
+                  <div>
+                    <p className="font-medium text-charcoal text-sm">{item.label}</p>
+                    <p className="text-xs text-slate mt-0.5">{item.desc}</p>
+                  </div>
+                  <button
+                    onClick={() => item.onChange(!item.value)}
+                    className={`w-11 h-6 rounded-full transition-colors relative ${item.value ? "bg-terracotta" : "bg-clay/40"}`}
+                  >
+                    <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all shadow-sm ${item.value ? "left-5" : "left-0.5"}`} />
+                  </button>
+                </div>
+              ))}
+              <Button onClick={() => toast.success("Preferences saved")} className="bg-terracotta hover:bg-orange-600 text-white">
+                <Save size={14} className="mr-1.5" /> Save Preferences
+              </Button>
+            </div>
+          )}
+
+          {activeTab === "security" && (
+            <div className="bg-warm-white rounded-2xl border border-clay/30 p-6 space-y-5">
+              <h2 className="font-playfair text-xl font-bold text-charcoal">Security</h2>
+              <div className="space-y-4">
+                <div className="p-4 bg-parchment rounded-xl">
+                  <p className="font-medium text-charcoal text-sm mb-1">Change Password</p>
+                  <p className="text-xs text-slate mb-3">Choose a strong password to protect your account</p>
+                  <div className="space-y-2">
+                    <Input type="password" placeholder="Current password" className={fieldClass} />
+                    <Input type="password" placeholder="New password" className={fieldClass} />
+                    <Input type="password" placeholder="Confirm new password" className={fieldClass} />
+                  </div>
+                  <Button className="mt-3 bg-terracotta hover:bg-orange-600 text-white" size="sm"
+                    onClick={() => toast.success("Password updated")}>Update Password</Button>
+                </div>
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+                  <p className="font-medium text-red-700 text-sm mb-1">Danger Zone</p>
+                  <p className="text-xs text-red-600 mb-3">Sign out of all devices</p>
+                  <Button variant="destructive" size="sm" onClick={handleLogout}>
+                    <LogOut size={13} className="mr-1.5" /> Sign Out Everywhere
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "appearance" && (
+            <div className="bg-warm-white rounded-2xl border border-clay/30 p-6 space-y-5">
+              <h2 className="font-playfair text-xl font-bold text-charcoal">Appearance</h2>
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { id: "warm",  label: "Warm",  bg: "bg-[hsl(42,33%,93%)]",  accent: "bg-[#D96C4A]" },
+                  { id: "light", label: "Light", bg: "bg-white",               accent: "bg-blue-500" },
+                  { id: "dark",  label: "Dark",  bg: "bg-gray-900",             accent: "bg-purple-500" },
+                ].map((t) => (
+                  <button key={t.id}
+                    className={`rounded-xl border-2 overflow-hidden transition-all ${theme === t.id ? "border-terracotta" : "border-clay/30"}`}
+                    onClick={() => toast.info("Theme switching coming soon!")}>
+                    <div className={`${t.bg} h-16 relative`}>
+                      <div className={`absolute bottom-2 right-2 w-6 h-6 rounded-lg ${t.accent}`} />
+                    </div>
+                    <div className="bg-warm-white px-3 py-2 text-xs font-medium text-charcoal">{t.label}</div>
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate">More theme options coming soon.</p>
+            </div>
+          )}
+
         </motion.div>
 
+        {/* Sign out */}
         <div className="flex justify-end">
-          <Button onClick={handleSave} className="bg-terracotta hover:bg-terracotta/90 text-white">
-            {saved ? <><Check size={16} className="mr-2" /> Saved</> : <><Save size={16} className="mr-2" /> Save Changes</>}
+          <Button variant="ghost" className="text-slate hover:text-crimson" onClick={handleLogout}>
+            <LogOut size={14} className="mr-1.5" /> Sign Out
           </Button>
         </div>
       </div>

@@ -1,27 +1,29 @@
-import { useTheme } from "next-themes";
-import { Toaster as Sonner, toast } from "sonner";
+"use client"
 
-type ToasterProps = React.ComponentProps<typeof Sonner>;
+import { Toaster as SonnerToaster } from "sonner"
+
+// Wrapper without next-themes dependency
+type ToasterProps = React.ComponentProps<typeof SonnerToaster>
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme();
-
   return (
-    <Sonner
-      theme={theme as ToasterProps["theme"]}
+    <SonnerToaster
+      theme="light"
       className="toaster group"
       toastOptions={{
         classNames: {
           toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg",
-          description: "group-[.toast]:text-muted-foreground",
-          actionButton: "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
-          cancelButton: "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
+            "group toast group-[.toaster]:bg-warm-white group-[.toaster]:text-charcoal group-[.toaster]:border-clay/30 group-[.toaster]:shadow-lg",
+          description: "group-[.toast]:text-slate",
+          actionButton:
+            "group-[.toast]:bg-terracotta group-[.toast]:text-white",
+          cancelButton:
+            "group-[.toast]:bg-parchment group-[.toast]:text-slate",
         },
       }}
       {...props}
     />
-  );
-};
+  )
+}
 
-export { Toaster, toast };
+export { Toaster }
