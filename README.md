@@ -2,3 +2,7 @@
 "## Live Voting Features" 
 "- Real-time updates" 
 "- Anonymous voting" 
+"## How to Use" 
+"1. Visit the website" 
+"2. Create a poll" 
+"3. Share the link" 
