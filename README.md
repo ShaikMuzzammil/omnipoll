@@ -186,3 +186,4 @@ OmniPoll includes **client-side** AI analysis (no external API required):
 ## 📄 License
 
 MIT — free to use, modify, and distribute.
+"test" 
