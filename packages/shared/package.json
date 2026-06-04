@@ -1,0 +1,8 @@
+{
+  "name": "@omnipoll/shared",
+  "version": "2.0.0",
+  "main": "./src/types.ts",
+  "exports": {
+    ".": "./src/types.ts"
+  }
+}
