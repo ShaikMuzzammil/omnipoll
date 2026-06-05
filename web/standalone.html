@@ -1,0 +1,1456 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>OmniPoll – Live Polling Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={theme:{extend:{fontFamily:{playfair:['Playfair Display','serif'],inter:['Inter','sans-serif'],mono:['JetBrains Mono','monospace']},colors:{terracotta:'#D96C4A',clay:'#C4A882','warm-white':'#FDF9F3',cream:'#F5EFE4',parchment:'#EDE4D5',charcoal:'#2C2C2C',slate:'#6B6B6B',sage:'#7B9E87',crimson:'#C94040','warm-bg':'hsl(42,33%,93%)'}}}}
+</script>
+<style>
+*{box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:hsl(42,33%,93%);color:#2C2C2C;margin:0}
+.font-playfair{font-family:'Playfair Display',serif}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:hsl(42,33%,93%)}
+::-webkit-scrollbar-thumb{background:#C4A882;border-radius:99px}
+.animate-spin{animation:spin 1s linear infinite}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.animate-pulse{animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.bar-fill{transition:width 0.6s ease}
+.fade-in{animation:fadeIn 0.3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.word-cloud-word{transition:all 0.3s ease;cursor:default}
+.word-cloud-word:hover{opacity:.8}
+.quiz-timer{transition:width 0.1s linear}
+input,textarea,select{outline:none}
+input:focus,textarea:focus,select:focus{ring:none}
+.modal-bg{animation:fadeIn 0.2s ease}
+.toast{animation:slideIn 0.3s ease}
+@keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+.tab-btn{transition:all 0.2s}
+.poll-card{transition:all 0.2s}
+.poll-card:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,0,0,.08)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="toasts" style="position:fixed;top:1rem;right:1rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem;pointer-events:none"></div>
+
+<script>
+// ============================================================
+// OMNIPOLL – Complete In-Browser App (localStorage + BroadcastChannel)
+// ============================================================
+
+// ── Storage helpers ──────────────────────────────────────────
+const DB_KEY = 'omnipoll_db';
+function readDB() {
+  try { return JSON.parse(localStorage.getItem(DB_KEY)||'{}'); } catch { return {}; }
+}
+function writeDB(db) { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+function getPolls() { const db=readDB(); return db.polls||[]; }
+function getUsers() { const db=readDB(); return db.users||[]; }
+function savePolls(polls) { const db=readDB(); db.polls=polls; writeDB(db); }
+function saveUsers(users) { const db=readDB(); db.users=users; writeDB(db); }
+
+const AUTH_KEY='omnipoll_auth';
+function getAuth() { try { return JSON.parse(localStorage.getItem(AUTH_KEY)||'null'); } catch { return null; } }
+function setAuth(user) { if(user) localStorage.setItem(AUTH_KEY,JSON.stringify(user)); else localStorage.removeItem(AUTH_KEY); }
+
+const VOTED_KEY='omnipoll_voted';
+function getVoted() { try { return JSON.parse(localStorage.getItem(VOTED_KEY)||'{}'); } catch { return {}; } }
+function markVoted(pollId) { const v=getVoted(); v[pollId]=Date.now(); localStorage.setItem(VOTED_KEY,JSON.stringify(v)); }
+function hasVoted(pollId) { return !!(getVoted()[pollId]); }
+
+const bc = new BroadcastChannel('omnipoll');
+
+// ── Utilities ────────────────────────────────────────────────
+function uid(len=8){ return Math.random().toString(36).slice(2,2+len).toUpperCase(); }
+function joinCode(){ return uid(6); }
+function slugify(s){ return s.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,''); }
+function now(){ return Date.now(); }
+function fmtDate(ts){ return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+function fmtTime(ts){ return new Date(ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}); }
+function clamp(v,min,max){ return Math.min(max,Math.max(min,v)); }
+
+function levenshtein(a,b){
+  const m=a.length,n=b.length;
+  const dp=Array.from({length:m+1},(_,i)=>Array.from({length:n+1},(_,j)=>i===0?j:j===0?i:0));
+  for(let i=1;i<=m;i++) for(let j=1;j<=n;j++) dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+  return dp[m][n];
+}
+
+// ── Sentiment & themes ───────────────────────────────────────
+const POS_WORDS=['great','good','excellent','amazing','awesome','love','fantastic','best','perfect','happy','wonderful','brilliant','nice','like','enjoy'];
+const NEG_WORDS=['bad','terrible','hate','awful','poor','worst','dislike','boring','difficult','confusing','frustrating','wrong','fail','issue','problem'];
+function analyzeSentiment(texts){
+  let pos=0,neg=0,total=0;
+  texts.forEach(t=>{ const w=t.toLowerCase().split(/\s+/); w.forEach(word=>{ if(POS_WORDS.some(p=>levenshtein(word,p)<=1)) pos++; else if(NEG_WORDS.some(n=>levenshtein(word,n)<=1)) neg++; }); total+=w.length; });
+  if(!total) return {score:50,label:'neutral'};
+  const ratio=(pos-neg)/(pos+neg+1);
+  const score=Math.round(50+ratio*50);
+  return {score,label:score>60?'positive':score<40?'negative':'neutral'};
+}
+function extractThemes(texts){
+  const freq={};
+  texts.forEach(t=>{ t.toLowerCase().split(/\s+/).forEach(w=>{ if(w.length>3) freq[w]=(freq[w]||0)+1; }); });
+  const groups={};
+  Object.entries(freq).forEach(([word,count])=>{
+    let merged=false;
+    for(const key in groups){ if(levenshtein(word,key)<=2){ groups[key].count+=count; merged=true; break; } }
+    if(!merged) groups[word]={label:word,count};
+  });
+  return Object.values(groups).sort((a,b)=>b.count-a.count).slice(0,6);
+}
+
+// ── Poll data model ──────────────────────────────────────────
+function createPoll({title,type,question,settings,options,quizQuestions,creatorId}){
+  return {
+    id: uid(10),
+    code: joinCode(),
+    title, type, question, settings: settings||{},
+    options: options||[],
+    quizQuestions: quizQuestions||[],
+    responses: [],
+    qaQuestions: [],
+    status: 'live',
+    creatorId,
+    participants: [],
+    createdAt: now(),
+    expiresAt: settings?.duration ? now()+settings.duration*60000 : null
+  };
+}
+
+function getPollResults(poll){
+  const r={participants: poll.participants?.length||0};
+  if(poll.type==='multiple_choice'){
+    const totalVotes=poll.responses.reduce((s,resp)=>{
+      const ans=resp.answer; return s+(Array.isArray(ans)?ans.length:1);
+    },0);
+    r.totalVotes=totalVotes;
+    r.options=poll.options.map(opt=>{
+      const votes=poll.responses.filter(resp=>{
+        const ans=resp.answer;
+        return Array.isArray(ans)?ans.includes(opt.id):(ans===opt.id);
+      }).length;
+      const pct=totalVotes?Math.round(votes/totalVotes*100):0;
+      return {...opt,votes,pct};
+    });
+  } else if(poll.type==='word_cloud'){
+    const freq={};
+    poll.responses.forEach(resp=>{ const w=(resp.answer||'').toLowerCase().trim(); if(w) freq[w]=(freq[w]||0)+1; });
+    r.words=Object.entries(freq).sort((a,b)=>b[1]-a[1]).map(([text,count])=>({text,count}));
+    r.totalResponses=poll.responses.length;
+    const texts=poll.responses.map(resp=>resp.answer||'');
+    r.sentiment=analyzeSentiment(texts);
+    r.themes=extractThemes(texts);
+  } else if(poll.type==='qa'){
+    r.questions=[...poll.qaQuestions].sort((a,b)=>b.upvotes-a.upvotes);
+    const texts=poll.qaQuestions.map(q=>q.questionText);
+    r.sentiment=analyzeSentiment(texts);
+    r.themes=extractThemes(texts);
+  } else if(poll.type==='quiz'){
+    const scoreMap={};
+    const nameMap={};
+    const correctMap={};
+    const answeredMap={};
+    poll.responses.forEach(resp=>{
+      const pid=resp.participantId||'anon';
+      nameMap[pid]=resp.participantName||'Anonymous';
+      scoreMap[pid]=(scoreMap[pid]||0)+(resp.score||0);
+      answeredMap[pid]=(answeredMap[pid]||0)+1;
+      if(resp.isCorrect) correctMap[pid]=(correctMap[pid]||0)+1;
+    });
+    r.leaderboard=Object.entries(scoreMap).map(([participantId,score])=>({
+      participantId, name:nameMap[participantId], score,
+      answered:answeredMap[participantId]||0, correct:correctMap[participantId]||0
+    })).sort((a,b)=>b.score-a.score);
+    r.submissions=poll.responses;
+  } else if(poll.type==='rating'){
+    const vals=poll.responses.map(resp=>Number(resp.answer)).filter(v=>!isNaN(v));
+    r.totalResponses=vals.length;
+    r.average=vals.length?vals.reduce((s,v)=>s+v,0)/vals.length:0;
+    const dist={};
+    const min=poll.settings?.min||1, max=poll.settings?.max||5;
+    for(let i=min;i<=max;i++) dist[i]=0;
+    vals.forEach(v=>{ dist[v]=(dist[v]||0)+1; });
+    r.distribution=dist;
+  }
+  return r;
+}
+
+// ── Toast ────────────────────────────────────────────────────
+function showToast(msg,type='success'){
+  const el=document.createElement('div');
+  const bg=type==='error'?'#C94040':type==='info'?'#7B9EA8':'#7B9E87';
+  el.style.cssText=`background:${bg};color:white;padding:.75rem 1.25rem;border-radius:.75rem;font-size:.875rem;font-weight:500;pointer-events:auto;max-width:320px;box-shadow:0 4px 20px rgba(0,0,0,.15)`;
+  el.className='toast';el.textContent=msg;
+  const container=document.getElementById('toasts');
+  container.appendChild(el);
+  setTimeout(()=>el.remove(),3000);
+}
+
+// ── Router ───────────────────────────────────────────────────
+let _page='home', _params={}, _listeners=[];
+function navigate(page,params={}){ _page=page; _params=params; _listeners.forEach(fn=>fn(page,params)); }
+function onNav(fn){ _listeners.push(fn); return ()=>{ _listeners=_listeners.filter(f=>f!==fn); }; }
+function getPage(){ return {page:_page,params:_params}; }
+
+// Handle URL hash for direct poll links
+function initRouter(){
+  const hash=window.location.hash.replace('#','');
+  if(hash.startsWith('poll/')) navigate('poll-view',{code:hash.slice(5)});
+  else if(hash==='dashboard') navigate('dashboard');
+  else if(hash==='create') navigate('create');
+}
+
+// ── COMPONENTS ───────────────────────────────────────────────
+
+function h(tag,props,...children){
+  const el=document.createElement(tag);
+  if(props) Object.entries(props).forEach(([k,v])=>{
+    if(k==='className') el.className=v;
+    else if(k.startsWith('on')&&typeof v==='function') el.addEventListener(k.slice(2).toLowerCase(),v);
+    else if(k==='style'&&typeof v==='object') Object.assign(el.style,v);
+    else if(k==='htmlFor') el.htmlFor=v;
+    else if(k in el) el[k]=v;
+    else el.setAttribute(k,v);
+  });
+  children.flat(Infinity).forEach(c=>{
+    if(c===null||c===undefined) return;
+    el.appendChild(typeof c==='string'||typeof c==='number'?document.createTextNode(c):c);
+  });
+  return el;
+}
+
+function svg(icon){
+  const icons={
+    home:`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+    plus:`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+    chart:`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>`,
+    users:`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    logout:`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
+    copy:`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+    pause:`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`,
+    play:`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`,
+    stop:`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`,
+    trash:`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`,
+    check:`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+    arrow:`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`,
+    star:`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+    trophy:`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>`,
+    download:`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+    link:`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+    x:`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+    menu:`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`,
+    thumbup:`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>`,
+  };
+  const s=document.createElement('span');
+  s.innerHTML=icons[icon]||'';
+  s.style.display='inline-flex';s.style.alignItems='center';
+  return s;
+}
+
+// ── Reusable UI ───────────────────────────────────────────────
+function btn(label,onClick,opts={}){
+  const {variant='primary',size='md',icon,disabled=false,type='button'}=opts;
+  const sizes={sm:'px-3 py-1.5 text-xs',md:'px-4 py-2 text-sm',lg:'px-6 py-3 text-base'};
+  const variants={
+    primary:'bg-terracotta hover:bg-orange-600 text-white',
+    secondary:'bg-parchment hover:bg-clay text-charcoal border border-clay/50',
+    ghost:'bg-transparent hover:bg-cream text-slate',
+    danger:'bg-crimson hover:bg-red-700 text-white',
+    sage:'bg-sage hover:bg-green-700 text-white',
+    amber:'bg-amber-500 hover:bg-amber-600 text-white',
+  };
+  const el=h('button',{type,onClick,disabled,
+    className:`font-medium rounded-xl transition-all flex items-center gap-1.5 ${sizes[size]} ${variants[variant]} ${disabled?'opacity-50 cursor-not-allowed':''}`
+  },
+    icon?svg(icon):'',
+    label
+  );
+  return el;
+}
+
+function input(placeholder,value='',onChange=null,opts={}){
+  const {type='text',required=false,min,max,step,rows}=opts;
+  const baseClass='w-full px-4 py-2.5 rounded-xl border border-clay/40 bg-warm-white text-charcoal text-sm focus:border-terracotta transition-colors placeholder:text-slate/60';
+  let el;
+  if(rows){
+    el=h('textarea',{placeholder,required,className:baseClass,rows});
+    el.value=value;
+    if(onChange) el.addEventListener('input',e=>onChange(e.target.value));
+  } else {
+    el=h('input',{type,placeholder,required,className:baseClass});
+    el.value=value;
+    if(min!==undefined) el.min=min;
+    if(max!==undefined) el.max=max;
+    if(step!==undefined) el.step=step;
+    if(onChange) el.addEventListener('input',e=>onChange(e.target.value));
+  }
+  return el;
+}
+
+function label(text,children){
+  const wrap=h('div',{className:'space-y-1.5'});
+  wrap.appendChild(h('label',{className:'text-sm font-medium text-charcoal'},text));
+  if(children) wrap.appendChild(children);
+  return wrap;
+}
+
+function card(children,cls=''){
+  return h('div',{className:`bg-warm-white rounded-2xl border border-clay/30 p-6 ${cls}`},...(Array.isArray(children)?children:[children]));
+}
+
+function badge(text,color='terracotta'){
+  const colors={terracotta:'bg-terracotta/10 text-terracotta',sage:'bg-sage/10 text-sage',amber:'bg-amber-100 text-amber-700',red:'bg-red-100 text-red-600',slate:'bg-slate/10 text-slate'};
+  return h('span',{className:`text-xs font-semibold px-2.5 py-1 rounded-full ${colors[color]||colors.slate}`},text);
+}
+
+function spinner(){
+  const el=h('div',{className:'animate-spin w-5 h-5 border-2 border-terracotta border-t-transparent rounded-full'});
+  return el;
+}
+
+// ── Navbar ────────────────────────────────────────────────────
+function renderNavbar(){
+  const user=getAuth();
+  const nav=h('nav',{className:'sticky top-0 z-50 bg-warm-white/90 backdrop-blur border-b border-clay/30'},
+    h('div',{className:'max-w-6xl mx-auto px-4 h-14 flex items-center justify-between'},
+      h('button',{className:'font-playfair text-xl font-bold text-charcoal',onClick:()=>navigate('home')},
+        h('span',{className:'text-terracotta'},'Omni'),'Poll'
+      ),
+      h('div',{className:'flex items-center gap-2'},
+        user ? [
+          btn('Dashboard',()=>navigate('dashboard'),{variant:'ghost',size:'sm',icon:'chart'}),
+          btn('New Poll',()=>navigate('create'),{variant:'primary',size:'sm',icon:'plus'}),
+          h('div',{className:'flex items-center gap-2 pl-2 border-l border-clay/30'},
+            h('span',{className:'text-sm text-slate hidden sm:block'},user.name),
+            btn('',()=>{ setAuth(null); navigate('home'); showToast('Signed out'); },{variant:'ghost',size:'sm',icon:'logout'})
+          )
+        ] : [
+          btn('Sign In',()=>navigate('auth',{mode:'signin'}),{variant:'ghost',size:'sm'}),
+          btn('Get Started',()=>navigate('auth',{mode:'signup'}),{variant:'primary',size:'sm'})
+        ]
+      )
+    )
+  );
+  return nav;
+}
+
+// ── HOME PAGE ─────────────────────────────────────────────────
+function renderHome(){
+  let joinCodeVal='';
+  const section=h('div',{className:'min-h-screen'},
+    // Hero
+    h('section',{className:'max-w-6xl mx-auto px-4 pt-20 pb-16 text-center'},
+      h('div',{className:'inline-flex items-center gap-2 bg-terracotta/10 text-terracotta text-xs font-semibold px-3 py-1.5 rounded-full mb-6'},'✦ Real-time polling for everyone'),
+      h('h1',{className:'font-playfair text-5xl md:text-7xl font-bold text-charcoal mb-6 leading-tight'},
+        'Engage your audience ',h('span',{className:'text-terracotta'},'live')
+      ),
+      h('p',{className:'text-slate text-lg md:text-xl max-w-2xl mx-auto mb-10'},'Create polls, quizzes, word clouds, and Q&A sessions. Watch results update in real-time. Export everything.'),
+      // Join code form
+      h('div',{className:'flex flex-col sm:flex-row gap-3 max-w-md mx-auto mb-16'},
+        (()=>{
+          const inp=h('input',{type:'text',placeholder:'Enter join code (e.g. AB12CD)',className:'flex-1 px-4 py-3 rounded-xl border border-clay/40 bg-warm-white text-charcoal text-sm focus:border-terracotta transition-colors font-mono tracking-widest uppercase'});
+          inp.addEventListener('input',e=>{ joinCodeVal=e.target.value.toUpperCase(); });
+          inp.addEventListener('keydown',e=>{ if(e.key==='Enter') joinWithCode(); });
+          return inp;
+        })(),
+        btn('Join Poll',()=>{
+          const code=joinCodeVal.trim().toUpperCase();
+          if(!code){ showToast('Enter a join code','error'); return; }
+          const poll=getPolls().find(p=>p.code===code);
+          if(!poll){ showToast('Poll not found','error'); return; }
+          navigate('poll-view',{code});
+        },{variant:'primary',size:'md'})
+      ),
+    ),
+
+    // Poll type cards
+    h('section',{className:'max-w-6xl mx-auto px-4 pb-20'},
+      h('h2',{className:'font-playfair text-3xl font-bold text-charcoal text-center mb-10'},'Everything you need'),
+      h('div',{className:'grid sm:grid-cols-2 lg:grid-cols-3 gap-5'},
+        ...[
+          {icon:'📊',title:'Multiple Choice',desc:'Predefined options with real-time vote bars. Single or multi-select.',color:'bg-terracotta/10'},
+          {icon:'☁️',title:'Word Cloud',desc:'Open text responses transform into a live, beautiful word cloud.',color:'bg-sage/10'},
+          {icon:'❓',title:'Q&A Session',desc:'Audience submits questions, upvotes rise to the top in real-time.',color:'bg-amber-50'},
+          {icon:'🏆',title:'Live Quiz',desc:'Timed questions, automatic scoring, live leaderboard.',color:'bg-blue-50'},
+          {icon:'⭐',title:'Rating Scale',desc:'Customizable 1–10 scale with live average and distribution.',color:'bg-purple-50'},
+          {icon:'🤖',title:'AI Insights',desc:'Sentiment analysis and theme clustering for open-ended responses.',color:'bg-pink-50'},
+        ].map(({icon,title,desc,color})=>
+          h('div',{className:`poll-card ${color} rounded-2xl p-6 border border-clay/20`},
+            h('div',{className:'text-3xl mb-3'},icon),
+            h('h3',{className:'font-playfair text-lg font-bold text-charcoal mb-1'},title),
+            h('p',{className:'text-slate text-sm'},desc)
+          )
+        )
+      )
+    ),
+
+    // CTA
+    h('section',{className:'max-w-6xl mx-auto px-4 pb-20'},
+      h('div',{className:'bg-terracotta rounded-3xl p-10 text-center text-white'},
+        h('h2',{className:'font-playfair text-4xl font-bold mb-4'},'Ready to get started?'),
+        h('p',{className:'text-white/80 mb-8 text-lg'},'Create your first poll in under a minute. No credit card required.'),
+        btn('Create Your First Poll',()=>navigate('auth',{mode:'signup'}),{variant:'secondary',size:'lg'})
+      )
+    )
+  );
+  return section;
+}
+
+// ── AUTH PAGE ─────────────────────────────────────────────────
+function renderAuth(params){
+  let mode=params?.mode||'signin';
+  const wrap=h('div',{className:'min-h-screen flex items-center justify-center px-4 py-12'});
+
+  function build(){
+    wrap.innerHTML='';
+    const isSignup=mode==='signup';
+    let name='',email='',password='';
+    const nameInp=input('Your name','',v=>name=v);
+    const emailInp=input('Email address','',v=>email=v,{type:'email',required:true});
+    const passInp=input('Password','',v=>password=v,{type:'password',required:true});
+
+    const submitBtn=btn(isSignup?'Create Account':'Sign In',()=>{
+      if(!email||!password){ showToast('Fill in all fields','error'); return; }
+      if(isSignup&&!name){ showToast('Enter your name','error'); return; }
+      const users=getUsers();
+      if(isSignup){
+        if(users.find(u=>u.email===email)){ showToast('Email already registered','error'); return; }
+        const user={id:uid(10),name,email,password,createdAt:now()};
+        saveUsers([...users,user]);
+        setAuth({id:user.id,name:user.name,email:user.email});
+        showToast('Welcome to OmniPoll!');
+        navigate('dashboard');
+      } else {
+        const user=users.find(u=>u.email===email&&u.password===password);
+        if(!user){ showToast('Invalid email or password','error'); return; }
+        setAuth({id:user.id,name:user.name,email:user.email});
+        showToast('Welcome back, '+user.name+'!');
+        navigate('dashboard');
+      }
+    },{size:'lg'});
+
+    const box=card([
+      h('div',{className:'text-center mb-8'},
+        h('div',{className:'font-playfair text-2xl font-bold text-charcoal mb-1'},isSignup?'Create account':'Welcome back'),
+        h('p',{className:'text-slate text-sm'},isSignup?'Start creating live polls today':'Sign in to your OmniPoll account')
+      ),
+      h('div',{className:'space-y-4'},
+        isSignup?label('Your Name',nameInp):null,
+        label('Email',emailInp),
+        label('Password',passInp),
+      ).filter(Boolean),
+      h('div',{className:'mt-6'},submitBtn),
+      h('p',{className:'text-center text-sm text-slate mt-4'},
+        isSignup?'Already have an account? ':'Don't have an account? ',
+        h('button',{className:'text-terracotta font-medium',onClick:()=>{ mode=isSignup?'signin':'signup'; build(); }},isSignup?'Sign in':'Sign up')
+      )
+    ],'w-full max-w-sm');
+
+    wrap.appendChild(box);
+  }
+  build();
+  return wrap;
+}
+
+// ── CREATE POLL PAGE ──────────────────────────────────────────
+function renderCreate(){
+  const user=getAuth();
+  if(!user){ navigate('auth',{mode:'signin'}); return h('div'); }
+
+  let step=1; // 1=type, 2=details, 3=settings
+  let pollType='multiple_choice';
+  let title='',question='',settings={},options=[{id:uid(),text:'Option A'},{id:uid(),text:'Option B'}];
+  let quizQuestions=[{id:uid(),questionText:'',correctAnswer:'',points:100,timeLimit:20,options:[{id:uid(),text:'A'},{id:uid(),text:'B'},{id:uid(),text:'C'}]}];
+
+  const container=h('div',{className:'max-w-3xl mx-auto px-4 py-10'});
+
+  const TYPES=[
+    {id:'multiple_choice',icon:'📊',label:'Multiple Choice',desc:'Predefined options with vote bars'},
+    {id:'word_cloud',icon:'☁️',label:'Word Cloud',desc:'Open text → live visual cloud'},
+    {id:'qa',icon:'❓',label:'Q&A Session',desc:'Questions + upvotes'},
+    {id:'quiz',icon:'🏆',label:'Live Quiz',desc:'Timed scoring & leaderboard'},
+    {id:'rating',icon:'⭐',label:'Rating Scale',desc:'Numeric scale with distribution'},
+  ];
+
+  function render(){
+    container.innerHTML='';
+
+    // Progress
+    const progress=h('div',{className:'mb-8'},
+      h('div',{className:'flex items-center justify-between mb-2'},
+        h('span',{className:'font-playfair text-2xl font-bold text-charcoal'},'Create Poll'),
+        h('span',{className:'text-sm text-slate'},`Step ${step} of 3`)
+      ),
+      h('div',{className:'h-2 bg-parchment rounded-full overflow-hidden'},
+        h('div',{className:'h-full bg-terracotta bar-fill rounded-full',style:{width:`${(step/3)*100}%`}})
+      )
+    );
+    container.appendChild(progress);
+
+    if(step===1){
+      // Type selection
+      const grid=h('div',{className:'grid sm:grid-cols-2 gap-4'},
+        ...TYPES.map(t=>h('button',{
+          onClick:()=>{ pollType=t.id; render(); },
+          className:`poll-card text-left p-5 rounded-2xl border-2 transition-all ${pollType===t.id?'border-terracotta bg-terracotta/5':'border-clay/30 bg-warm-white'}`
+        },
+          h('div',{className:'text-3xl mb-2'},t.icon),
+          h('div',{className:'font-semibold text-charcoal'},t.label),
+          h('div',{className:'text-sm text-slate mt-1'},t.desc)
+        ))
+      );
+      container.appendChild(grid);
+      container.appendChild(h('div',{className:'mt-6 flex justify-end'},
+        btn('Next: Question',()=>{ step=2; render(); },{size:'lg',icon:'arrow'})
+      ));
+      return;
+    }
+
+    if(step===2){
+      const fields=h('div',{className:'space-y-5'});
+
+      // Title
+      const titleInp=input('Poll title (e.g. Product Feedback Survey)',title,v=>title=v);
+      fields.appendChild(label('Poll Title',titleInp));
+
+      // Question
+      const qInp=input('Your question or prompt',question,v=>question=v,{rows:3});
+      fields.appendChild(label('Question / Prompt',qInp));
+
+      // Type-specific
+      if(pollType==='multiple_choice'){
+        const optWrap=h('div',{className:'space-y-2'});
+        function renderOptions(){
+          optWrap.innerHTML='';
+          options.forEach((opt,i)=>{
+            const row=h('div',{className:'flex gap-2 items-center'},
+              input(`Option ${i+1}`,opt.text,v=>{ options[i].text=v; }),
+              options.length>2?btn('',()=>{ options=options.filter(o=>o.id!==opt.id); renderOptions(); },{variant:'ghost',size:'sm',icon:'trash'}):null
+            );
+            optWrap.appendChild(row);
+          });
+          if(options.length<8) optWrap.appendChild(
+            btn('Add Option',()=>{ options=[...options,{id:uid(),text:''}]; renderOptions(); },{variant:'ghost',size:'sm',icon:'plus'})
+          );
+        }
+        renderOptions();
+        fields.appendChild(label(`Options (${options.length})`,optWrap));
+
+        // Multi-select?
+        const msWrap=h('div',{className:'flex items-center gap-3'});
+        const msCb=h('input',{type:'checkbox',className:'w-4 h-4 accent-terracotta'});
+        msCb.checked=settings.multiSelect||false;
+        msCb.addEventListener('change',e=>{ settings.multiSelect=e.target.checked; });
+        msWrap.appendChild(msCb);
+        msWrap.appendChild(h('span',{className:'text-sm text-charcoal'},'Allow multiple selections'));
+        fields.appendChild(label('Options',msWrap));
+      }
+
+      if(pollType==='rating'){
+        const row=h('div',{className:'grid grid-cols-3 gap-3'},
+          (()=>{ const i=input('Min',String(settings.min||1),v=>settings.min=Number(v),{type:'number',min:0,max:10}); return label('Min',i); })(),
+          (()=>{ const i=input('Max',String(settings.max||5),v=>settings.max=Number(v),{type:'number',min:1,max:100}); return label('Max',i); })(),
+          (()=>{ const i=input('Step',String(settings.step||1),v=>settings.step=Number(v),{type:'number',min:1}); return label('Step',i); })(),
+        );
+        fields.appendChild(label('Scale Configuration',row));
+        const labels2=h('div',{className:'grid grid-cols-2 gap-3'},
+          (()=>{ const i=input('Left label (e.g. Very Poor)',settings.labelLeft||'',v=>settings.labelLeft=v); return label('Left Label',i); })(),
+          (()=>{ const i=input('Right label (e.g. Excellent)',settings.labelRight||'',v=>settings.labelRight=v); return label('Right Label',i); })(),
+        );
+        fields.appendChild(label('Scale Labels',labels2));
+      }
+
+      if(pollType==='word_cloud'){
+        const mr=input('Max responses (0 = unlimited)',String(settings.maxResponses||0),v=>settings.maxResponses=Number(v),{type:'number',min:0});
+        fields.appendChild(label('Max Responses',mr));
+      }
+
+      if(pollType==='quiz'){
+        const qzWrap=h('div',{className:'space-y-4'});
+        function renderQuizQ(){
+          qzWrap.innerHTML='';
+          quizQuestions.forEach((qq,qi)=>{
+            const qcard=h('div',{className:'bg-parchment rounded-xl p-4 space-y-3'},
+              h('div',{className:'flex justify-between items-center'},
+                h('span',{className:'font-semibold text-sm text-charcoal'},`Question ${qi+1}`),
+                quizQuestions.length>1?btn('',()=>{ quizQuestions=quizQuestions.filter(q=>q.id!==qq.id); renderQuizQ(); },{variant:'ghost',size:'sm',icon:'trash'}):null
+              ),
+              input('Question text',qq.questionText,v=>quizQuestions[qi].questionText=v),
+              h('div',{className:'grid grid-cols-2 gap-2'},
+                ...qq.options.map((opt,oi)=>input(`Option ${oi+1}`,opt.text,v=>quizQuestions[qi].options[oi].text=v))
+              ),
+              h('div',{className:'grid grid-cols-3 gap-2'},
+                (()=>{ const sel=h('select',{className:'w-full px-3 py-2 rounded-xl border border-clay/40 bg-warm-white text-sm text-charcoal'},...qq.options.map(opt=>h('option',{value:opt.id},opt.text))); sel.value=qq.correctAnswer; sel.addEventListener('change',e=>quizQuestions[qi].correctAnswer=e.target.value); return label('Correct Answer',sel); })(),
+                (()=>{ const i=input('Points',String(qq.points),v=>quizQuestions[qi].points=Number(v),{type:'number',min:10}); return label('Points',i); })(),
+                (()=>{ const i=input('Time (sec)',String(qq.timeLimit),v=>quizQuestions[qi].timeLimit=Number(v),{type:'number',min:5}); return label('Time Limit',i); })(),
+              )
+            );
+            qzWrap.appendChild(qcard);
+          });
+          qzWrap.appendChild(btn('Add Question',()=>{ quizQuestions=[...quizQuestions,{id:uid(),questionText:'',correctAnswer:'',points:100,timeLimit:20,options:[{id:uid(),text:'A'},{id:uid(),text:'B'},{id:uid(),text:'C'},{id:uid(),text:'D'}]}]; renderQuizQ(); },{variant:'ghost',size:'sm',icon:'plus'}));
+        }
+        renderQuizQ();
+        fields.appendChild(label(`Quiz Questions (${quizQuestions.length})`,qzWrap));
+      }
+
+      container.appendChild(card(fields));
+      container.appendChild(h('div',{className:'mt-6 flex justify-between'},
+        btn('Back',()=>{ step=1; render(); },{variant:'secondary',size:'md'}),
+        btn('Next: Settings',()=>{
+          if(!title.trim()){ showToast('Add a title','error'); return; }
+          if(!question.trim()){ showToast('Add a question','error'); return; }
+          step=3; render();
+        },{size:'md',icon:'arrow'})
+      ));
+      return;
+    }
+
+    if(step===3){
+      const fields=h('div',{className:'space-y-5'});
+
+      // Duration
+      const durSel=h('select',{className:'w-full px-4 py-2.5 rounded-xl border border-clay/40 bg-warm-white text-sm text-charcoal'},
+        ...[{v:'',l:'Open (no time limit)'},{v:'5',l:'5 minutes'},{v:'15',l:'15 minutes'},{v:'30',l:'30 minutes'},{v:'60',l:'1 hour'},{v:'1440',l:'24 hours'}].map(({v,l})=>h('option',{value:v},l))
+      );
+      durSel.value=settings.duration?String(settings.duration):'';
+      durSel.addEventListener('change',e=>{ settings.duration=e.target.value?Number(e.target.value):null; });
+      fields.appendChild(label('Duration',durSel));
+
+      // Show results
+      const srWrap=h('div',{className:'flex items-center gap-3'});
+      const srCb=h('input',{type:'checkbox',className:'w-4 h-4 accent-terracotta'});
+      srCb.checked=settings.showResults!==false;
+      srCb.addEventListener('change',e=>settings.showResults=e.target.checked);
+      srWrap.appendChild(srCb);
+      srWrap.appendChild(h('span',{className:'text-sm text-charcoal'},'Show results to participants after voting'));
+      fields.appendChild(label('Results Visibility',srWrap));
+
+      // One vote
+      const ovWrap=h('div',{className:'flex items-center gap-3'});
+      const ovCb=h('input',{type:'checkbox',className:'w-4 h-4 accent-terracotta'});
+      ovCb.checked=settings.oneVote!==false;
+      ovCb.addEventListener('change',e=>settings.oneVote=e.target.checked);
+      ovWrap.appendChild(ovCb);
+      ovWrap.appendChild(h('span',{className:'text-sm text-charcoal'},'One response per device'));
+      fields.appendChild(label('Vote Restriction',ovWrap));
+
+      container.appendChild(card(fields));
+
+      const publishBtn=btn('Publish Poll',()=>{
+        const poll=createPoll({title,type:pollType,question,settings:{...settings,showResults:settings.showResults!==false,oneVote:settings.oneVote!==false},options,quizQuestions,creatorId:user.id});
+        savePolls([...getPolls(),poll]);
+        bc.postMessage({type:'poll_created',pollId:poll.id});
+        showToast('Poll published! Share code: '+poll.code);
+        navigate('results',{id:poll.id});
+      },{size:'lg'});
+
+      container.appendChild(h('div',{className:'mt-6 flex justify-between'},
+        btn('Back',()=>{ step=2; render(); },{variant:'secondary',size:'md'}),
+        publishBtn
+      ));
+    }
+  }
+
+  render();
+  return h('div',{className:'min-h-screen px-4 py-10'},
+    h('div',{className:'max-w-3xl mx-auto'},container)
+  );
+}
+
+// ── DASHBOARD PAGE ────────────────────────────────────────────
+function renderDashboard(){
+  const user=getAuth();
+  if(!user){ navigate('auth',{mode:'signin'}); return h('div'); }
+
+  const wrap=h('div',{className:'min-h-screen px-4 py-10'});
+
+  function build(){
+    wrap.innerHTML='';
+    const polls=getPolls().filter(p=>p.creatorId===user.id).sort((a,b)=>b.createdAt-a.createdAt);
+
+    const header=h('div',{className:'max-w-5xl mx-auto'},
+      h('div',{className:'flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8'},
+        h('div',null,
+          h('h1',{className:'font-playfair text-3xl font-bold text-charcoal'},'My Polls'),
+          h('p',{className:'text-slate text-sm mt-1'},`Welcome back, ${user.name}`)
+        ),
+        btn('Create Poll',()=>navigate('create'),{variant:'primary',size:'md',icon:'plus'})
+      )
+    );
+    wrap.appendChild(header);
+
+    if(!polls.length){
+      const empty=h('div',{className:'max-w-5xl mx-auto'},
+        h('div',{className:'text-center py-20 bg-warm-white rounded-2xl border border-clay/30'},
+          h('div',{className:'text-5xl mb-4'},'📊'),
+          h('h2',{className:'font-playfair text-2xl font-bold text-charcoal mb-2'},'No polls yet'),
+          h('p',{className:'text-slate mb-6'},'Create your first poll and start engaging your audience'),
+          btn('Create Your First Poll',()=>navigate('create'),{size:'lg'})
+        )
+      );
+      wrap.appendChild(empty);
+      return;
+    }
+
+    const grid=h('div',{className:'max-w-5xl mx-auto grid sm:grid-cols-2 lg:grid-cols-3 gap-5'});
+    polls.forEach(poll=>{
+      const results=getPollResults(poll);
+      const statusColors={live:'sage',paused:'amber',closed:'red'};
+      const typeIcons={multiple_choice:'📊',word_cloud:'☁️',qa:'❓',quiz:'🏆',rating:'⭐'};
+      const pollCard=h('div',{className:'poll-card bg-warm-white rounded-2xl border border-clay/30 p-5 cursor-pointer flex flex-col gap-3',onClick:()=>navigate('results',{id:poll.id})},
+        h('div',{className:'flex items-start justify-between gap-2'},
+          h('div',null,
+            h('div',{className:'text-2xl mb-1'},typeIcons[poll.type]||'📊'),
+            h('h3',{className:'font-semibold text-charcoal line-clamp-2'},poll.title),
+            h('p',{className:'text-xs text-slate mt-1'},poll.type.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()))
+          ),
+          badge(poll.status.toUpperCase(),statusColors[poll.status]||'slate')
+        ),
+        h('div',{className:'flex items-center gap-4 text-xs text-slate'},
+          h('span',null,'👥 '+results.participants+' participants'),
+          h('span',null,'📅 '+fmtDate(poll.createdAt))
+        ),
+        h('div',{className:'flex items-center gap-2 mt-auto pt-2 border-t border-clay/20'},
+          h('code',{className:'flex-1 text-xs font-mono bg-parchment px-2 py-1 rounded-lg text-terracotta'},poll.code),
+          btn('',()=>{ navigator.clipboard.writeText(poll.code); showToast('Join code copied!'); },{variant:'ghost',size:'sm',icon:'copy'}),
+          h('div',{onClick:e=>e.stopPropagation(),className:'flex gap-1'},
+            poll.status==='live'?btn('',()=>{ const ps=getPolls(); const idx=ps.findIndex(p=>p.id===poll.id); ps[idx].status='paused'; savePolls(ps); build(); showToast('Paused'); },{variant:'ghost',size:'sm',icon:'pause'}):
+            poll.status==='paused'?btn('',()=>{ const ps=getPolls(); const idx=ps.findIndex(p=>p.id===poll.id); ps[idx].status='live'; savePolls(ps); build(); showToast('Resumed'); },{variant:'ghost',size:'sm',icon:'play'}):null,
+            btn('',()=>{
+              if(!confirm('Delete this poll?')) return;
+              savePolls(getPolls().filter(p=>p.id!==poll.id));
+              build(); showToast('Poll deleted');
+            },{variant:'ghost',size:'sm',icon:'trash'})
+          )
+        )
+      );
+      grid.appendChild(pollCard);
+    });
+    wrap.appendChild(grid);
+  }
+
+  build();
+  // Listen for live updates
+  const unsubBC=()=>bc.onmessage=null;
+  bc.onmessage=()=>build();
+  return wrap;
+}
+
+// ── RESULTS PAGE (Creator view) ───────────────────────────────
+function renderResults(params){
+  const user=getAuth();
+  if(!user){ navigate('auth',{mode:'signin'}); return h('div'); }
+  const pollId=params?.id;
+
+  const wrap=h('div',{className:'min-h-screen px-4 py-10'});
+  let activeTab='overview';
+  let copied=false;
+
+  function build(){
+    const poll=getPolls().find(p=>p.id===pollId);
+    if(!poll){ wrap.innerHTML=''; wrap.appendChild(h('div',{className:'max-w-5xl mx-auto text-center py-20'},'Poll not found. ',btn('Back',()=>navigate('dashboard'),{variant:'ghost',size:'sm'}))); return; }
+    const results=getPollResults(poll);
+    wrap.innerHTML='';
+
+    const container=h('div',{className:'max-w-5xl mx-auto space-y-6'});
+
+    // Header
+    const statusColors={live:'sage',paused:'amber',closed:'red'};
+    const typeIcons={multiple_choice:'📊',word_cloud:'☁️',qa:'❓',quiz:'🏆',rating:'⭐'};
+    container.appendChild(h('div',null,
+      h('button',{className:'flex items-center gap-1 text-sm text-slate hover:text-charcoal mb-4',onClick:()=>navigate('dashboard')},
+        '← Back to Dashboard'
+      ),
+      h('div',{className:'flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4'},
+        h('div',null,
+          h('div',{className:'flex items-center gap-3 mb-1'},
+            h('span',{className:'text-3xl'},typeIcons[poll.type]),
+            h('h1',{className:'font-playfair text-3xl font-bold text-charcoal'},poll.title),
+            badge(poll.status.toUpperCase(),statusColors[poll.status]||'slate')
+          ),
+          h('p',{className:'text-slate text-sm'},poll.type.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())+' · Join code: ',
+            h('code',{className:'font-mono text-terracotta'},poll.code)
+          )
+        ),
+        h('div',{className:'flex flex-wrap gap-2'},
+          poll.status!=='live'?btn('Resume',()=>{ const ps=getPolls(); const idx=ps.findIndex(p=>p.id===pollId); ps[idx].status='live'; savePolls(ps); bc.postMessage({type:'status_changed',pollId}); build(); showToast('Resumed'); },{variant:'sage',size:'sm',icon:'play'}):null,
+          poll.status==='live'?btn('Pause',()=>{ const ps=getPolls(); const idx=ps.findIndex(p=>p.id===pollId); ps[idx].status='paused'; savePolls(ps); bc.postMessage({type:'status_changed',pollId}); build(); showToast('Paused'); },{variant:'amber',size:'sm',icon:'pause'}):null,
+          poll.status!=='closed'?btn('Close',()=>{ const ps=getPolls(); const idx=ps.findIndex(p=>p.id===pollId); ps[idx].status='closed'; savePolls(ps); bc.postMessage({type:'status_changed',pollId}); build(); showToast('Poll closed'); },{variant:'danger',size:'sm',icon:'stop'}):null,
+          btn(copied?'Copied!':'Share Link',()=>{
+            navigator.clipboard.writeText(window.location.origin+window.location.pathname+'#poll/'+poll.code);
+            copied=true; showToast('Link copied!'); setTimeout(()=>{ copied=false; },2000);
+          },{variant:'secondary',size:'sm',icon:'link'}),
+          btn('Export CSV',()=>exportCSV(poll,results),{variant:'secondary',size:'sm',icon:'download'}),
+          btn('Print Report',()=>printReport(poll,results),{variant:'secondary',size:'sm',icon:'download'}),
+        )
+      )
+    ));
+
+    // Stats
+    const respCount=poll.type==='multiple_choice'?results.totalVotes:poll.type==='quiz'?(results.submissions?.length||0):poll.type==='qa'?(results.questions?.length||0):(results.totalResponses||0);
+    container.appendChild(h('div',{className:'grid grid-cols-2 sm:grid-cols-4 gap-4'},
+      ...[
+        {label:'Responses',value:respCount||0,icon:'📊'},
+        {label:'Participants',value:results.participants,icon:'👥'},
+        {label:'Status',value:poll.status,icon:'🔴'},
+        {label:'Join Code',value:poll.code,icon:'🔑'},
+      ].map(s=>h('div',{className:'bg-warm-white rounded-2xl border border-clay/30 p-4 fade-in'},
+        h('div',{className:'text-2xl mb-1'},s.icon),
+        h('div',{className:'font-bold text-xl text-charcoal font-mono'},s.value),
+        h('div',{className:'text-xs text-slate'},s.label)
+      ))
+    ));
+
+    // Tabs
+    const tabs=['overview','breakdown','export'];
+    const tabRow=h('div',{className:'flex gap-1 bg-warm-white rounded-xl border border-clay/30 p-1'},
+      ...tabs.map(t=>h('button',{
+        className:`tab-btn flex-1 py-2 rounded-lg text-sm font-medium capitalize ${activeTab===t?'bg-terracotta text-white':'text-slate hover:text-charcoal hover:bg-parchment'}`,
+        onClick:()=>{ activeTab=t; build(); }
+      },t))
+    );
+    container.appendChild(tabRow);
+
+    // Tab content
+    if(activeTab==='overview'){
+      container.appendChild(buildResultViz(poll,results));
+    } else if(activeTab==='breakdown'){
+      container.appendChild(buildBreakdown(poll,results));
+    } else {
+      container.appendChild(buildExport(poll,results));
+    }
+
+    wrap.innerHTML='';
+    wrap.appendChild(container);
+  }
+
+  build();
+
+  // Live updates via BroadcastChannel
+  bc.onmessage=e=>{
+    if(e.data?.pollId===pollId) build();
+  };
+
+  // Auto-refresh every 5s
+  const interval=setInterval(build,5000);
+  wrap._cleanup=()=>{ clearInterval(interval); };
+
+  return wrap;
+}
+
+function buildResultViz(poll,results){
+  const wrap=h('div',{className:'space-y-6 fade-in'});
+
+  if(poll.type==='multiple_choice'){
+    const c=card([
+      h('h2',{className:'font-playfair text-xl font-bold text-charcoal mb-5'},'Vote Distribution'),
+      h('div',{className:'space-y-4'},
+        ...(results.options||[]).map((opt,i)=>h('div',{className:'space-y-1'},
+          h('div',{className:'flex justify-between text-sm'},
+            h('span',{className:'font-medium text-charcoal'},opt.text),
+            h('span',{className:'font-mono text-slate'},opt.votes+' ('+opt.pct+'%)')
+          ),
+          h('div',{className:'h-5 bg-parchment rounded-full overflow-hidden'},
+            h('div',{className:'h-full bg-terracotta bar-fill rounded-full',style:{width:opt.pct+'%',transition:'width 0.6s ease',animationDelay:(i*0.1)+'s'}})
+          )
+        ))
+      )
+    ]);
+    wrap.appendChild(c);
+  } else if(poll.type==='word_cloud'){
+    wrap.appendChild(h('div',{className:'grid lg:grid-cols-3 gap-5'},
+      card([
+        h('h2',{className:'font-playfair text-xl font-bold text-charcoal mb-4'},'Word Cloud'),
+        h('div',{className:'min-h-48 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 p-4'},
+          ...(results.words?.length?results.words.map(w=>
+            h('span',{className:'word-cloud-word font-bold text-terracotta',style:{fontSize:Math.min(48,14+w.count*8)+'px'}},w.text)
+          ):[h('span',{className:'text-slate text-sm'},'Waiting for responses...')])
+        )
+      ],'lg:col-span-2'),
+      buildInsights(results)
+    ));
+  } else if(poll.type==='qa'){
+    wrap.appendChild(h('div',{className:'grid lg:grid-cols-3 gap-5'},
+      card([
+        h('h2',{className:'font-playfair text-xl font-bold text-charcoal mb-4'},'Questions by Upvotes'),
+        h('div',{className:'space-y-3'},
+          ...(results.questions?.length?results.questions.map((q,i)=>
+            h('div',{className:'bg-parchment rounded-xl p-4 flex justify-between gap-3 items-start'},
+              h('div',{className:'flex gap-3 items-start'},
+                h('span',{className:'text-xs font-bold text-terracotta w-5 pt-0.5'},i+1),
+                h('p',{className:'text-sm text-charcoal'},q.questionText)
+              ),
+              h('span',{className:'text-xs font-bold text-terracotta whitespace-nowrap'},'▲ '+q.upvotes)
+            )
+          ):[h('p',{className:'text-slate text-sm'},'No questions yet.')])
+        )
+      ],'lg:col-span-2'),
+      buildInsights(results)
+    ));
+  } else if(poll.type==='quiz'){
+    wrap.appendChild(card([
+      h('h2',{className:'font-playfair text-xl font-bold text-charcoal mb-5'},'Leaderboard'),
+      h('div',{className:'space-y-3'},
+        ...(results.leaderboard?.length?results.leaderboard.map((row,i)=>{
+          const medalColors=['bg-yellow-100 text-yellow-700','bg-gray-100 text-gray-600','bg-amber-100 text-amber-700'];
+          return h('div',{className:'bg-parchment rounded-xl p-4 flex items-center justify-between'},
+            h('div',{className:'flex items-center gap-3'},
+              h('div',{className:'w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm '+(medalColors[i]||'bg-parchment text-slate')},i+1),
+              h('div',null,
+                h('p',{className:'font-semibold text-charcoal text-sm'},row.name),
+                h('p',{className:'text-xs text-slate'},row.correct+'/'+(row.answered)+' correct')
+              )
+            ),
+            h('div',{className:'flex items-center gap-1 font-bold text-charcoal'},
+              svg('trophy'),' ',row.score
+            )
+          );
+        }):[h('p',{className:'text-slate text-sm'},'No submissions yet.')])
+      )
+    ]));
+  } else if(poll.type==='rating'){
+    const avg=results.average||0;
+    const max=poll.settings?.max||5;
+    const total=results.totalResponses||0;
+    wrap.appendChild(card([
+      h('div',{className:'text-center mb-6'},
+        h('div',{className:'text-5xl font-bold text-charcoal font-playfair'},avg.toFixed(1)),
+        h('div',{className:'text-slate text-sm mt-1'},'Average · '+total+' responses'),
+        h('div',{className:'flex justify-center gap-1 mt-3'},
+          ...[...Array(max)].map((_,i)=>h('span',{className:'text-xl',style:{opacity:i<Math.round(avg)?1:0.2}},'⭐'))
+        )
+      ),
+      h('div',{className:'space-y-2'},
+        ...Object.entries(results.distribution||{}).reverse().map(([val,count])=>{
+          const pct=total?Math.round(count/total*100):0;
+          return h('div',{className:'flex items-center gap-3'},
+            h('span',{className:'w-6 text-sm font-mono text-charcoal text-right'},val),
+            h('div',{className:'flex-1 h-4 bg-parchment rounded-full overflow-hidden'},
+              h('div',{className:'h-full bg-terracotta bar-fill rounded-full',style:{width:pct+'%'}})
+            ),
+            h('span',{className:'w-10 text-xs text-slate text-right'},count)
+          );
+        })
+      )
+    ]));
+  }
+
+  return wrap;
+}
+
+function buildInsights(results){
+  return card([
+    h('h3',{className:'font-semibold text-charcoal mb-3'},'AI Insights'),
+    h('div',{className:'space-y-4'},
+      h('div',null,
+        h('p',{className:'text-xs text-slate uppercase tracking-wide mb-1.5'},'Sentiment'),
+        h('div',{className:'flex items-center gap-2'},
+          h('div',{className:'flex-1 h-2 bg-parchment rounded-full overflow-hidden'},
+            h('div',{className:'h-full rounded-full bar-fill '+(results.sentiment?.label==='positive'?'bg-sage':results.sentiment?.label==='negative'?'bg-crimson':'bg-amber-400'),style:{width:(results.sentiment?.score||50)+'%'}})
+          ),
+          h('span',{className:'text-xs font-mono text-charcoal'},(results.sentiment?.score||50)+'%')
+        ),
+        h('p',{className:'text-xs text-slate mt-1 capitalize'},results.sentiment?.label||'neutral')
+      ),
+      h('div',null,
+        h('p',{className:'text-xs text-slate uppercase tracking-wide mb-2'},'AI Themes'),
+        h('div',{className:'space-y-1.5'},
+          ...(results.themes?.length?results.themes.slice(0,5).map(t=>
+            h('div',{className:'bg-parchment rounded-lg px-3 py-2 flex justify-between'},
+              h('span',{className:'text-sm text-charcoal'},t.label),
+              h('span',{className:'text-xs text-slate'},t.count)
+            )
+          ):[h('p',{className:'text-xs text-slate'},'Themes appear with open text.')])
+        )
+      )
+    )
+  ]);
+}
+
+function buildBreakdown(poll,results){
+  const c=card([
+    h('h2',{className:'font-playfair text-xl font-bold text-charcoal mb-5'},'Detailed Breakdown'),
+    h('pre',{className:'text-xs bg-parchment rounded-xl p-4 overflow-auto max-h-96 text-charcoal'},
+      JSON.stringify(results,null,2)
+    )
+  ],'fade-in');
+  return c;
+}
+
+function buildExport(poll,results){
+  return card([
+    h('h2',{className:'font-playfair text-xl font-bold text-charcoal mb-6'},'Export Results'),
+    h('div',{className:'space-y-4'},
+      h('div',{className:'flex items-center justify-between p-4 bg-parchment rounded-xl'},
+        h('div',null,
+          h('p',{className:'font-medium text-charcoal text-sm'},'📄 CSV Export'),
+          h('p',{className:'text-xs text-slate'},'Raw data for spreadsheets')
+        ),
+        btn('Download CSV',()=>exportCSV(poll,results),{variant:'secondary',size:'sm',icon:'download'})
+      ),
+      h('div',{className:'flex items-center justify-between p-4 bg-parchment rounded-xl'},
+        h('div',null,
+          h('p',{className:'font-medium text-charcoal text-sm'},'📊 PDF Report'),
+          h('p',{className:'text-xs text-slate'},'Branded printable report')
+        ),
+        btn('Print PDF',()=>printReport(poll,results),{variant:'secondary',size:'sm',icon:'download'})
+      ),
+      h('div',{className:'p-4 bg-parchment rounded-xl'},
+        h('p',{className:'text-xs text-slate uppercase tracking-wide mb-2'},'Embed Widget'),
+        h('code',{className:'text-xs text-charcoal break-all'},
+          `<iframe src="${window.location.href.split('#')[0]}#poll/${poll.code}" width="100%" height="640" />`
+        )
+      )
+    )
+  ],'fade-in');
+}
+
+function exportCSV(poll,results){
+  let csv='OmniPoll Export\n';
+  csv+=`Title,${poll.title}\nType,${poll.type}\nCode,${poll.code}\nStatus,${poll.status}\nParticipants,${results.participants}\n\n`;
+  if(poll.type==='multiple_choice'){
+    csv+='Option,Votes,Percentage\n';
+    (results.options||[]).forEach(o=>{ csv+=`"${o.text}",${o.votes},${o.pct}%\n`; });
+  } else if(poll.type==='word_cloud'){
+    csv+='Word,Count\n';
+    (results.words||[]).forEach(w=>{ csv+=`"${w.text}",${w.count}\n`; });
+  } else if(poll.type==='qa'){
+    csv+='Question,Upvotes\n';
+    (results.questions||[]).forEach(q=>{ csv+=`"${q.questionText}",${q.upvotes}\n`; });
+  } else if(poll.type==='quiz'){
+    csv+='Rank,Name,Score,Correct,Answered\n';
+    (results.leaderboard||[]).forEach((r,i)=>{ csv+=`${i+1},"${r.name}",${r.score},${r.correct},${r.answered}\n`; });
+  } else if(poll.type==='rating'){
+    csv+=`Average,${(results.average||0).toFixed(2)}\nTotal,${results.totalResponses}\n\nValue,Count\n`;
+    Object.entries(results.distribution||{}).forEach(([v,c])=>{ csv+=`${v},${c}\n`; });
+  }
+  const blob=new Blob([csv],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=`omnipoll-${poll.code}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function printReport(poll,results){
+  const respCount=poll.type==='multiple_choice'?results.totalVotes:poll.type==='quiz'?(results.submissions?.length||0):poll.type==='qa'?(results.questions?.length||0):(results.totalResponses||0);
+  const win=window.open('','_blank','width=900,height=700');
+  if(!win) return;
+  win.document.write(`<!DOCTYPE html><html><head><title>OmniPoll Report – ${poll.title}</title>
+  <style>body{font-family:Georgia,serif;padding:40px;color:#2C2C2C;max-width:800px;margin:0 auto}h1{font-size:32px;color:#D96C4A}h2{color:#2C2C2C;border-bottom:1px solid #C4A882;padding-bottom:8px}table{width:100%;border-collapse:collapse}th,td{padding:10px;text-align:left;border-bottom:1px solid #EDE4D5}th{background:#F5EFE4;font-weight:600}.meta{color:#6B6B6B;font-size:14px}.badge{background:#D96C4A;color:white;padding:3px 10px;border-radius:99px;font-size:12px}</style>
+  </head><body>
+  <h1>OmniPoll Report</h1>
+  <h2>${poll.title} <span class="badge">${poll.status.toUpperCase()}</span></h2>
+  <p class="meta">Type: ${poll.type.replace(/_/g,' ')} | Code: ${poll.code} | Date: ${fmtDate(poll.createdAt)}</p>
+  <p class="meta">${respCount} responses · ${results.participants} participants</p>
+  ${poll.type==='multiple_choice'?`<h2>Results</h2><table><tr><th>Option</th><th>Votes</th><th>%</th></tr>${(results.options||[]).map(o=>`<tr><td>${o.text}</td><td>${o.votes}</td><td>${o.pct}%</td></tr>`).join('')}</table>`:''}
+  ${poll.type==='rating'?`<h2>Rating Distribution</h2><p>Average: ${(results.average||0).toFixed(2)}</p><table><tr><th>Value</th><th>Count</th></tr>${Object.entries(results.distribution||{}).map(([v,c])=>`<tr><td>${v}</td><td>${c}</td></tr>`).join('')}</table>`:''}
+  ${poll.type==='quiz'?`<h2>Leaderboard</h2><table><tr><th>Rank</th><th>Name</th><th>Score</th><th>Correct</th></tr>${(results.leaderboard||[]).map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td>${r.score}</td><td>${r.correct}/${r.answered}</td></tr>`).join('')}</table>`:''}
+  ${poll.type==='word_cloud'?`<h2>Top Words</h2><table><tr><th>Word</th><th>Count</th></tr>${(results.words||[]).slice(0,20).map(w=>`<tr><td>${w.text}</td><td>${w.count}</td></tr>`).join('')}</table>`:''}
+  ${poll.type==='qa'?`<h2>Questions</h2><table><tr><th>Question</th><th>Upvotes</th></tr>${(results.questions||[]).map(q=>`<tr><td>${q.questionText}</td><td>${q.upvotes}</td></tr>`).join('')}</table>`:''}
+  ${results.sentiment?`<h2>AI Sentiment</h2><p>${results.sentiment.score}% ${results.sentiment.label}</p>`:''}
+  </body></html>`);
+  win.document.close(); win.focus(); win.print();
+}
+
+// ── POLL VIEW (Participant) ───────────────────────────────────
+function renderPollView(params){
+  const code=params?.code;
+  const wrap=h('div',{className:'min-h-screen px-4 py-10'});
+  let voted=false;
+  let participantName='';
+  let participantId=localStorage.getItem('omnipoll_pid')||uid(10);
+  localStorage.setItem('omnipoll_pid',participantId);
+  let currentQuizQ=0;
+  let quizScore=0;
+  let quizAnswers=[];
+  let quizTimer=null;
+  let quizTimeLeft=0;
+
+  function buildJoin(){
+    wrap.innerHTML='';
+    const nameInp=input('Your name (optional)','',v=>participantName=v);
+    wrap.appendChild(h('div',{className:'max-w-md mx-auto'},
+      card([
+        h('div',{className:'text-center mb-6'},
+          h('div',{className:'text-4xl mb-3'},'🎯'),
+          h('h1',{className:'font-playfair text-2xl font-bold text-charcoal'},'Join Poll'),
+          h('p',{className:'text-slate text-sm mt-1'},'Code: ',h('code',{className:'font-mono text-terracotta'},code))
+        ),
+        label('Your Name (optional)',nameInp),
+        h('div',{className:'mt-5'},btn('Join Poll',startPoll,{size:'lg'}))
+      ])
+    ));
+  }
+
+  function startPoll(){
+    const polls=getPolls();
+    const poll=polls.find(p=>p.code===code);
+    if(!poll){ showToast('Poll not found','error'); return; }
+    if(poll.status==='closed'){ showToast('This poll is closed','error'); return; }
+    if(poll.status==='paused'){ showToast('This poll is paused','info'); return; }
+
+    // Track participant
+    if(!poll.participants.includes(participantId)){
+      const idx=polls.findIndex(p=>p.code===code);
+      polls[idx].participants=[...poll.participants,participantId];
+      savePolls(polls);
+      bc.postMessage({type:'participant_joined',pollId:poll.id});
+    }
+
+    voted=hasVoted(poll.id)&&poll.settings?.oneVote;
+    buildPollUI(polls.find(p=>p.code===code));
+  }
+
+  function buildPollUI(poll){
+    wrap.innerHTML='';
+    if(poll.type==='multiple_choice') buildMultipleChoice(poll);
+    else if(poll.type==='word_cloud') buildWordCloud(poll);
+    else if(poll.type==='qa') buildQA(poll);
+    else if(poll.type==='quiz') buildQuiz(poll);
+    else if(poll.type==='rating') buildRating(poll);
+  }
+
+  function pollCard2(title,children){
+    const c=card(children,'max-w-xl mx-auto');
+    wrap.innerHTML='';
+    wrap.appendChild(h('div',{className:'max-w-xl mx-auto'},
+      h('div',{className:'mb-6'},
+        h('div',{className:'text-xs text-slate font-mono'},code),
+        h('h2',{className:'font-playfair text-2xl font-bold text-charcoal mt-1'},title)
+      ),
+      c
+    ));
+  }
+
+  function showResults(poll,extra=''){
+    const results=getPollResults(poll);
+    const viz=buildResultViz(poll,results);
+    wrap.innerHTML='';
+    wrap.appendChild(h('div',{className:'max-w-2xl mx-auto'},
+      h('div',{className:'flex items-center gap-3 mb-6'},
+        h('div',{className:'w-10 h-10 bg-sage/10 rounded-full flex items-center justify-center text-sage text-xl'},'✓'),
+        h('div',null,
+          h('h2',{className:'font-playfair text-2xl font-bold text-charcoal'},'Thank you!'),
+          h('p',{className:'text-slate text-sm'},extra||'Your response was recorded.')
+        )
+      ),
+      poll.settings?.showResults!==false?viz:h('p',{className:'text-slate text-sm bg-warm-white rounded-xl p-6 border border-clay/30'},'Results are hidden until the poll closes.')
+    ));
+
+    // Live refresh
+    const interval=setInterval(()=>{
+      if(poll.settings?.showResults===false) return;
+      const updatedPoll=getPolls().find(p=>p.id===poll.id);
+      if(!updatedPoll) return;
+      const updatedResults=getPollResults(updatedPoll);
+      const newViz=buildResultViz(updatedPoll,updatedResults);
+      const old=wrap.querySelector('.fade-in');
+      if(old) old.replaceWith(newViz);
+    },3000);
+    wrap._cleanup=()=>clearInterval(interval);
+  }
+
+  // MULTIPLE CHOICE
+  function buildMultipleChoice(poll){
+    let selected=new Set();
+    const optWrap=h('div',{className:'space-y-3'});
+    poll.options.forEach(opt=>{
+      const isMulti=poll.settings?.multiSelect;
+      const optBtn=h('button',{
+        className:`w-full text-left px-4 py-3 rounded-xl border-2 border-clay/30 bg-parchment hover:border-terracotta/50 transition-all text-sm font-medium text-charcoal`,
+        onClick:()=>{
+          if(isMulti){ if(selected.has(opt.id)) selected.delete(opt.id); else selected.add(opt.id); }
+          else { selected=new Set([opt.id]); }
+          optWrap.querySelectorAll('button').forEach(b=>b.classList.remove('border-terracotta','bg-terracotta/10'));
+          selected.forEach(id=>{
+            const idx=poll.options.findIndex(o=>o.id===id);
+            if(idx>=0) optWrap.children[idx].classList.add('border-terracotta','bg-terracotta/10');
+          });
+        }
+      },opt.text);
+      optWrap.appendChild(optBtn);
+    });
+
+    const submitBtn=btn('Submit Vote',()=>{
+      if(!selected.size){ showToast('Select an option','error'); return; }
+      if(voted){ showToast('Already voted','error'); return; }
+      const polls=getPolls(); const idx=polls.findIndex(p=>p.id===poll.id);
+      const ans=poll.settings?.multiSelect?[...selected]:([...selected][0]);
+      polls[idx].responses.push({id:uid(),participantId,participantName,answer:ans,createdAt:now()});
+      savePolls(polls); markVoted(poll.id); voted=true;
+      bc.postMessage({type:'vote',pollId:poll.id});
+      showResults(polls[idx],'Vote recorded!');
+    },{size:'lg'});
+
+    if(voted){
+      showResults(poll,'You already voted.');
+    } else {
+      pollCard2(poll.question,[
+        h('p',{className:'text-slate text-sm mb-4'},poll.settings?.multiSelect?'Select all that apply':'Select one option'),
+        optWrap,
+        h('div',{className:'mt-6'},submitBtn)
+      ]);
+    }
+  }
+
+  // WORD CLOUD
+  function buildWordCloud(poll){
+    if(voted){ showResults(poll,'Your word was added.'); return; }
+    let word='';
+    const wordInp=input('Enter a word or short phrase',word,v=>word=v);
+    pollCard2(poll.question,[
+      h('p',{className:'text-slate text-sm mb-4'},'Submit your word or phrase to contribute to the live word cloud'),
+      wordInp,
+      h('div',{className:'mt-6'},btn('Submit',()=>{
+        if(!word.trim()){ showToast('Enter a word','error'); return; }
+        const polls=getPolls(); const idx=polls.findIndex(p=>p.id===poll.id);
+        polls[idx].responses.push({id:uid(),participantId,participantName,answer:word.trim(),createdAt:now()});
+        savePolls(polls); markVoted(poll.id); voted=true;
+        bc.postMessage({type:'vote',pollId:poll.id});
+        showResults(polls[idx],'Word added!');
+      },{size:'lg'}))
+    ]);
+  }
+
+  // Q&A
+  function buildQA(poll){
+    let question='';
+    const upvotedQs=new Set(JSON.parse(localStorage.getItem('omnipoll_upvoted_'+poll.id)||'[]'));
+
+    function buildQAView(){
+      const polls=getPolls(); const currentPoll=polls.find(p=>p.id===poll.id)||poll;
+      const results=getPollResults(currentPoll);
+      wrap.innerHTML='';
+      const container=h('div',{className:'max-w-2xl mx-auto'},
+        h('div',{className:'mb-6'},
+          h('div',{className:'text-xs text-slate font-mono'},code),
+          h('h2',{className:'font-playfair text-2xl font-bold text-charcoal mt-1'},currentPoll.question)
+        ),
+        card([
+          // Question list
+          h('h3',{className:'font-semibold text-charcoal mb-3'},'Questions ('+results.questions?.length+')'),
+          h('div',{className:'space-y-2 max-h-72 overflow-y-auto mb-5'},
+            ...(results.questions?.length?results.questions.map(q=>
+              h('div',{className:'flex items-start gap-3 bg-parchment rounded-xl p-3'},
+                h('p',{className:'flex-1 text-sm text-charcoal'},q.questionText),
+                h('button',{
+                  className:'flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all '+(upvotedQs.has(q.id)?'bg-terracotta text-white':'bg-cream text-slate hover:bg-terracotta/10 hover:text-terracotta'),
+                  onClick:()=>{
+                    if(upvotedQs.has(q.id)) return;
+                    const ps=getPolls(); const pidx=ps.findIndex(p=>p.id===poll.id);
+                    const qidx=ps[pidx].qaQuestions.findIndex(qq=>qq.id===q.id);
+                    if(qidx>=0){ ps[pidx].qaQuestions[qidx].upvotes++; savePolls(ps); }
+                    upvotedQs.add(q.id);
+                    localStorage.setItem('omnipoll_upvoted_'+poll.id,JSON.stringify([...upvotedQs]));
+                    bc.postMessage({type:'qa_upvote',pollId:poll.id});
+                    buildQAView();
+                  }
+                },'▲ ',q.upvotes)
+              )
+            ):[h('p',{className:'text-slate text-sm'},'No questions yet. Be the first!')])
+          ),
+          // Submit new question
+          h('div',{className:'border-t border-clay/20 pt-4'},
+            h('h4',{className:'font-medium text-charcoal text-sm mb-2'},'Ask a question'),
+            h('div',{className:'flex gap-2'},
+              (()=>{ const i=input('Type your question...',question,v=>question=v); i.style.flex='1'; return i; })(),
+              btn('Ask',()=>{
+                if(!question.trim()){ showToast('Enter a question','error'); return; }
+                const ps=getPolls(); const pidx=ps.findIndex(p=>p.id===poll.id);
+                ps[pidx].qaQuestions=[...(ps[pidx].qaQuestions||[]),{id:uid(),questionText:question.trim(),upvotes:0,status:'open',createdAt:now()}];
+                savePolls(ps); question='';
+                bc.postMessage({type:'qa_new',pollId:poll.id});
+                buildQAView(); showToast('Question added!');
+              },{size:'sm'})
+            )
+          )
+        ])
+      );
+      wrap.appendChild(container);
+    }
+
+    buildQAView();
+    const interval=setInterval(buildQAView,4000);
+    wrap._cleanup=()=>clearInterval(interval);
+  }
+
+  // QUIZ
+  function buildQuiz(poll){
+    const questions=poll.quizQuestions||[];
+    if(!questions.length){ pollCard2(poll.question,[h('p',{className:'text-slate'},'No questions configured.')]); return; }
+
+    participantName=participantName||'Player '+uid(4);
+
+    function showQ(){
+      if(currentQuizQ>=questions.length){ showQuizDone(); return; }
+      const qq=questions[currentQuizQ];
+      quizTimeLeft=qq.timeLimit||20;
+      wrap.innerHTML='';
+
+      const timerBar=h('div',{className:'quiz-timer h-1.5 bg-terracotta rounded-full',style:{width:'100%'}});
+      const timerNum=h('span',{className:'text-sm font-mono font-bold text-terracotta'},quizTimeLeft+'s');
+
+      let selectedOpt=null;
+      const optWrap=h('div',{className:'space-y-2'});
+      qq.options.forEach((opt,oi)=>{
+        const ob=h('button',{
+          className:'w-full text-left px-4 py-3 rounded-xl border-2 border-clay/30 bg-parchment hover:border-terracotta/50 transition-all text-sm font-medium',
+          onClick:()=>{
+            if(selectedOpt) return;
+            selectedOpt=opt;
+            clearInterval(quizTimer);
+            submitAnswer(opt.id,qq);
+          }
+        },h('span',{className:'font-mono text-slate mr-2'},String.fromCharCode(65+oi)+'.'),opt.text);
+        optWrap.appendChild(ob);
+      });
+
+      wrap.appendChild(h('div',{className:'max-w-xl mx-auto'},
+        h('div',{className:'flex items-center justify-between mb-2'},
+          h('span',{className:'text-xs text-slate font-mono'},'Question '+(currentQuizQ+1)+' of '+questions.length),
+          h('div',{className:'flex items-center gap-2'},svg('trophy'),h('span',{className:'text-sm font-bold text-charcoal'},quizScore))
+        ),
+        h('div',{className:'h-1.5 bg-parchment rounded-full mb-6'},timerBar),
+        card([
+          h('div',{className:'flex items-center justify-between mb-4'},
+            h('h3',{className:'font-playfair text-xl font-bold text-charcoal'},qq.questionText||'Question '+(currentQuizQ+1)),
+            h('div',{className:'flex items-center gap-1'},timerNum)
+          ),
+          optWrap
+        ])
+      ));
+
+      clearInterval(quizTimer);
+      quizTimer=setInterval(()=>{
+        quizTimeLeft--;
+        const pct=quizTimeLeft/(qq.timeLimit||20)*100;
+        timerBar.style.width=pct+'%';
+        timerNum.textContent=quizTimeLeft+'s';
+        if(timerBar.style.background!=='') timerBar.style.background=pct<30?'#C94040':pct<60?'#D4A574':'#D96C4A';
+        if(quizTimeLeft<=0){ clearInterval(quizTimer); if(!selectedOpt) submitAnswer(null,qq); }
+      },1000);
+    }
+
+    function submitAnswer(optId,qq){
+      clearInterval(quizTimer);
+      const isCorrect=optId===qq.correctAnswer;
+      const points=isCorrect?Math.max(50,qq.points-Math.floor((qq.timeLimit-quizTimeLeft)*2)):0;
+      if(isCorrect) quizScore+=points;
+      quizAnswers.push({qId:qq.id,selected:optId,isCorrect,points});
+
+      // Save to poll
+      const ps=getPolls(); const pidx=ps.findIndex(p=>p.id===poll.id);
+      ps[pidx].responses.push({id:uid(),participantId,participantName,answer:optId,questionId:qq.id,isCorrect,score:points,createdAt:now()});
+      savePolls(ps);
+      bc.postMessage({type:'quiz_answer',pollId:poll.id});
+
+      // Show feedback
+      wrap.innerHTML='';
+      wrap.appendChild(h('div',{className:'max-w-xl mx-auto text-center'},
+        h('div',{className:'text-6xl mb-4'},isCorrect?'🎉':'❌'),
+        h('h3',{className:'font-playfair text-2xl font-bold '+(isCorrect?'text-sage':'text-crimson')},isCorrect?'Correct! +'+points:optId?'Wrong!':'Time\'s up!'),
+        isCorrect?null:h('p',{className:'text-slate text-sm mt-2'},'Correct: '+(qq.options.find(o=>o.id===qq.correctAnswer)?.text||qq.correctAnswer)),
+        h('div',{className:'mt-2 text-charcoal'},'Score: ',h('span',{className:'font-bold text-terracotta font-playfair text-2xl'},quizScore)),
+        h('div',{className:'mt-6'},btn('Next Question',()=>{ currentQuizQ++; showQ(); },{size:'lg'}))
+      ));
+    }
+
+    function showQuizDone(){
+      // Save final results
+      bc.postMessage({type:'quiz_done',pollId:poll.id});
+      showResults(getPolls().find(p=>p.id===poll.id)||poll,`Finished! Your score: ${quizScore}`);
+    }
+
+    showQ();
+  }
+
+  // RATING
+  function buildRating(poll){
+    if(voted){ showResults(poll,'Rating submitted.'); return; }
+    const min=poll.settings?.min||1, max=poll.settings?.max||5;
+    let selected=null;
+    const ratingWrap=h('div',{className:'flex flex-wrap gap-2 justify-center my-6'});
+
+    function renderRating(){
+      ratingWrap.innerHTML='';
+      for(let i=min;i<=max;i++){
+        const rb=h('button',{
+          className:`w-12 h-12 rounded-xl border-2 font-bold text-sm transition-all ${selected===i?'border-terracotta bg-terracotta text-white':'border-clay/40 bg-parchment text-charcoal hover:border-terracotta/50'}`,
+          onClick:()=>{ selected=i; renderRating(); }
+        },i);
+        ratingWrap.appendChild(rb);
+      }
+    }
+    renderRating();
+
+    pollCard2(poll.question,[
+      h('div',{className:'flex justify-between text-xs text-slate mt-1 mb-2'},
+        h('span',null,poll.settings?.labelLeft||String(min)),
+        h('span',null,poll.settings?.labelRight||String(max))
+      ),
+      ratingWrap,
+      h('div',{className:'mt-4'},btn('Submit Rating',()=>{
+        if(selected===null){ showToast('Select a rating','error'); return; }
+        const ps=getPolls(); const pidx=ps.findIndex(p=>p.id===poll.id);
+        ps[pidx].responses.push({id:uid(),participantId,participantName,answer:selected,createdAt:now()});
+        savePolls(ps); markVoted(poll.id); voted=true;
+        bc.postMessage({type:'vote',pollId:poll.id});
+        showResults(ps[pidx],'Rating submitted!');
+      },{size:'lg'}))
+    ]);
+  }
+
+  buildJoin();
+  return wrap;
+}
+
+// ── MAIN RENDER LOOP ──────────────────────────────────────────
+let currentCleanup=null;
+
+function renderApp(){
+  const {page,params}=getPage();
+  const root=document.getElementById('root');
+
+  // Cleanup
+  if(currentCleanup) { try { currentCleanup(); } catch {} currentCleanup=null; }
+
+  const navbar=renderNavbar();
+  let content;
+
+  switch(page){
+    case 'home': content=renderHome(); break;
+    case 'auth': content=renderAuth(params); break;
+    case 'create': content=renderCreate(); break;
+    case 'dashboard': content=renderDashboard(); break;
+    case 'results': content=renderResults(params); break;
+    case 'poll-view': content=renderPollView(params); break;
+    default: content=renderHome();
+  }
+
+  root.innerHTML='';
+  root.appendChild(navbar);
+  root.appendChild(content);
+
+  if(content._cleanup) currentCleanup=content._cleanup;
+
+  // Update URL hash
+  if(page==='poll-view'&&params?.code) window.location.hash='poll/'+params.code;
+  else if(page==='dashboard') window.location.hash='dashboard';
+  else if(page==='create') window.location.hash='create';
+  else if(page==='home') window.location.hash='';
+}
+
+onNav(renderApp);
+initRouter();
+renderApp();
+</script>
+</body>
+</html>
