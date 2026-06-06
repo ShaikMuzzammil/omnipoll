@@ -6,7 +6,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { Users, Wifi, WifiOff, Play, Pause, Square, Maximize2, BarChart2, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSocket } from "@/hooks/useSocket";
-import { getPoll, updatePollStatus } from "@/lib/api";
+import { getPoll, updatePollStatus, getResults } from "@/lib/api";
 import { CHART_COLORS, POLL_TYPE_META } from "@/lib/types";
 import type { Poll, PollResults } from "@/lib/types";
 
@@ -19,33 +19,32 @@ export default function Present() {
   const [participants, setParticipants] = useState(0);
   const [showQR, setShowQR] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
-  const { socket, connected } = useSocket(id || null, PID);
+  const { socket, connected, participantCount } = useSocket(id || null, "HOST");
 
   useEffect(() => {
     if (!id) return;
     getPoll(id).then(d => {
       setPoll(d.poll);
-      setResults(d.results);
       setParticipants(d.poll?.participants?.length || 0);
     }).catch(console.error);
   }, [id]);
 
   useEffect(() => {
     if (!socket || !id) return;
-    socket.emit("host-join", { pollId: id });
-    socket.on("results-update", (r: PollResults) => setResults(r));
-    socket.on("participant-joined", ({ count }: { count: number }) => setParticipants(count));
-    socket.on("status-changed", ({ status }: { status: string }) => {
-      setPoll(p => p ? { ...p, status: status as Poll["status"] } : p);
+    socket.emit("join:poll", { pollId: id, participantName: "HOST" });
+    socket.on("poll:vote", ({ results }: { results: PollResults; totalVotes: number }) => setResults(results));
+    socket.on("participant:joined", ({ count }: { count: number; name: string }) => setParticipants(count));
+    socket.on("poll:updated", ({ poll: updatedPoll }: { poll: Poll }) => {
+      setPoll(p => p ? { ...p, status: updatedPoll.status } : p);
     });
-    return () => { socket.off("results-update"); socket.off("participant-joined"); socket.off("status-changed"); };
+    return () => { socket.off("poll:vote"); socket.off("participant:joined"); socket.off("poll:updated"); };
   }, [socket, id]);
 
   const setStatus = async (status: string) => {
     if (!poll) return;
     await updatePollStatus(poll.id, status);
     setPoll(p => p ? { ...p, status: status as Poll["status"] } : p);
-    socket?.emit(status === "live" ? "go-live" : status === "paused" ? "pause-poll" : "close-poll", { pollId: poll.id });
+    if(status === "live") socket?.emit("poll:go-live", { pollId: poll.id }); else if(status === "paused") socket?.emit("poll:pause", { pollId: poll.id }); else socket?.emit("poll:end", { pollId: poll.id });
   };
 
   const toggleFullscreen = () => {

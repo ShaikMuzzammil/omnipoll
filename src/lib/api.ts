@@ -1,5 +1,5 @@
 /// <reference types="../vite-env.d.ts" />
-const BASE = import.meta.env.VITE_API_URL || "http://localhost:8787";
+const BASE = (import.meta.env.VITE_API_URL as string) || "http://localhost:8787";
 
 function getToken() {
   try { return JSON.parse(localStorage.getItem("omnipoll_auth") || "null")?.token || ""; }
@@ -38,41 +38,35 @@ export const getPolls = (creatorId?: string) =>
   apiFetch(`/api/polls${creatorId ? `?creatorId=${creatorId}` : ""}`);
 export const listPolls = getPolls;
 export const getPoll = (id: string) => apiFetch(`/api/polls/${id}`);
-export const joinByCode = (code: string) => apiFetch(`/api/join?code=${code}`);
+export const joinByCode = (code: string) => apiFetch(`/api/polls/join/${code}`);
+export const getPollByCode = joinByCode;
 export const vote = (id: string, body: Record<string, unknown>) =>
   apiFetch(`/api/polls/${id}/vote`, { method: "POST", body: JSON.stringify(body) });
 export const getResults = (id: string) => apiFetch(`/api/polls/${id}/results`);
 export const updatePollStatus = (id: string, status: string) =>
-  apiFetch(`/api/polls/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+  apiFetch(`/api/polls/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
 export const deletePoll = (id: string) =>
   apiFetch(`/api/polls/${id}`, { method: "DELETE" });
 export const updatePoll = (id: string, body: Record<string, unknown>) =>
-  apiFetch(`/api/polls/${id}`, { method: "PUT", body: JSON.stringify(body) });
-export const getPollByCode = joinByCode;
+  apiFetch(`/api/polls/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 
 // Q&A
-export const addQAQuestion = (id: string, body: { questionText: string; participantId: string }) =>
-  apiFetch(`/api/polls/${id}/qa`, { method: "POST", body: JSON.stringify(body) });
+export const addQAQuestion = (id: string, body: { text: string; author: string }) =>
+  apiFetch(`/api/polls/${id}/qa/question`, { method: "POST", body: JSON.stringify(body) });
 export const upvoteQAQuestion = (id: string, questionId: string) =>
-  apiFetch(`/api/polls/${id}/qa/${questionId}/upvote`, { method: "PUT" });
-export const moderateQAQuestion = (id: string, questionId: string, action: "answer" | "highlight" | "dismiss") =>
-  apiFetch(`/api/polls/${id}/qa/${questionId}/moderate`, { method: "PATCH", body: JSON.stringify({ action }) });
-
-// Quiz
-export const submitQuizAnswer = (id: string, body: Record<string, unknown>) =>
-  apiFetch(`/api/polls/${id}/quiz/submit`, { method: "POST", body: JSON.stringify(body) });
-export const getLeaderboard = (id: string) =>
-  apiFetch(`/api/polls/${id}/quiz/leaderboard`);
+  apiFetch(`/api/polls/${id}/qa/${questionId}/upvote`, { method: "POST" });
+export const moderateQAQuestion = (id: string, questionId: string, body: Record<string, unknown>) =>
+  apiFetch(`/api/polls/${id}/qa/${questionId}`, { method: "PATCH", body: JSON.stringify(body) });
 
 // Analytics
 export const getAnalytics = (id: string) => apiFetch(`/api/polls/${id}/analytics`);
 export const getDashboardStats = (creatorId: string) =>
-  apiFetch(`/api/analytics/dashboard?creatorId=${creatorId}`);
+  apiFetch(`/api/polls?creatorId=${creatorId}`);
 
 // Export
 export const csvExportUrl = (id: string) => `${BASE}/api/polls/${id}/export/csv`;
 export const participantUrl = (code: string) =>
-  `${window.location.origin}/poll/${code}`;
+  `${window.location.origin}/participate/${code}`;
 
 // Session helpers
 const SESSION_KEY = "omnipoll_session";

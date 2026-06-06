@@ -18,7 +18,7 @@ export default function Moderation() {
 
   const moderate = useMutation({
     mutationFn: ({ questionId, action }: { questionId: string; action: "answer"|"highlight"|"dismiss" }) =>
-      moderateQAQuestion(id!, questionId, action),
+      moderateQAQuestion(id!, questionId, { action }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["poll", id] }); toast.success("Updated"); },
   });
 
