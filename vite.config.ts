@@ -43,7 +43,7 @@ export default defineConfig({
           ],
           "chart-vendor": ["recharts"],
           "animation-vendor": ["framer-motion"],
-          "socket-vendor": ["socket.io-client"],
+          "realtime-vendor": ["pusher-js"],
           "query-vendor": ["@tanstack/react-query"]
         },
       },

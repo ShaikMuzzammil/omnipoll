@@ -40,7 +40,7 @@ export default function Participate() {
   const [nameSet, setNameSet] = useState(!!localStorage.getItem("omnipoll_name"));
   const imgRef = useRef<HTMLImageElement>(null);
 
-  const { socket, connected, emitVote, emitQA, emitQAUpvote } = useSocket(poll?.id || null, participantName);
+  const { on, connected, emitVote, emitQA, emitQAUpvote } = useSocket(poll?.id || null, participantName);
 
   useEffect(() => {
     if (!code) return;
@@ -58,12 +58,7 @@ export default function Participate() {
       .finally(() => setLoading(false));
   }, [code]);
 
-  useEffect(() => {
-    if (!socket) return;
-    socket.on("status-changed", ({ status: s }) => setStatus(s));
-    socket.on("qa-update", ({ questions }) => setQaList(questions));
-    return () => { socket.off("status-changed"); socket.off("qa-update"); };
-  }, [socket]);
+  // events handled by `on` above
 
   const setName = () => {
     if (!participantName.trim()) { toast.error("Enter your name"); return; }
@@ -92,8 +87,7 @@ export default function Participate() {
     const answer = getAnswer();
     if (answer === null || answer === undefined || (Array.isArray(answer) && answer.length === 0)) { toast.error("Please select or enter an answer"); return; }
     try {
-      if (socket) socket.emit("vote:submit", { pollId: poll!.id, participantId: PARTICIPANT_ID, participantName, answer });
-      else await vote(poll!.id, { participantId: PARTICIPANT_ID, participantName, answer });
+      await vote(poll!.id, { participantId: PARTICIPANT_ID, participantName, answer });
       setSubmitted(true);
       toast.success("Response submitted! 🎉");
     } catch (e: unknown) { toast.error(e instanceof Error ? e.message : "Already voted"); }
@@ -102,16 +96,14 @@ export default function Participate() {
   const submitQA = async () => {
     if (!qaText.trim()) return;
     try {
-      if (socket) socket.emit("submit-qa", { pollId: poll!.id, text: qaText.trim(), author: participantName || 'Anonymous' });
-      else await addQAQuestion(poll!.id, { text: qaText.trim(), author: participantName || 'Anonymous' });
+      await addQAQuestion(poll!.id, { text: qaText.trim(), author: participantName || 'Anonymous' });
       setQaText(""); toast.success("Question submitted!");
     } catch { toast.error("Failed to submit question"); }
   };
 
   const upvote = async (questionId: string) => {
     try {
-      if (socket) socket.emit("qa:upvote", { pollId: poll!.id, questionId });
-      else await upvoteQAQuestion(poll!.id, questionId);
+      await upvoteQAQuestion(poll!.id, questionId);
     } catch { toast.error("Failed to upvote"); }
   };
 

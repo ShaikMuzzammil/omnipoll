@@ -5,12 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 8080",
+    "dev:api": "node --watch api/index.js",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "server": "node server/index.mjs",
     "lint": "eslint .",
-    "test": "vitest",
-    "test:run": "vitest run"
+    "test": "vitest"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -42,14 +41,14 @@
     "framer-motion": "^11.3.19",
     "lucide-react": "^0.462.0",
     "nanoid": "^5.0.7",
+    "pusher": "^5.2.0",
+    "pusher-js": "^8.4.0-rc2",
     "qrcode.react": "^3.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.77.0",
     "react-router-dom": "^6.26.0",
     "recharts": "^2.12.7",
-    "socket.io": "^4.7.5",
-    "socket.io-client": "^4.7.5",
     "sonner": "^1.5.0",
     "tailwind-merge": "^2.4.0",
     "tailwindcss-animate": "^1.0.7",

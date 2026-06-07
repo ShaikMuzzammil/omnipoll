@@ -6,7 +6,7 @@ export type PollType =
   | "slider" | "true_false" | "fill_blank" | "bracket" | "prioritization"
   | "heatmap" | "emoji_reaction" | "poll_series" | "countdown_vote" | "live_matching";
 
-export type PollStatus = "live" | "paused" | "closed";
+export type PollStatus = "draft" | "live" | "paused" | "closed";
 
 export interface PollOption {
   id: string;
@@ -31,11 +31,15 @@ export interface QuizQuestion {
 
 export interface QAQuestion {
   id: string;
-  questionText: string;
+  text?: string;
+  questionText?: string;
   upvotes: number;
-  status: "open" | "answered" | "highlighted" | "dismissed";
+  status?: "open" | "answered" | "highlighted" | "dismissed";
+  answered?: boolean;
+  starred?: boolean;
+  author?: string;
   participantId?: string;
-  createdAt: number;
+  createdAt: number | string;
 }
 
 export interface QuizSubmission {
@@ -96,34 +100,47 @@ export interface Poll {
   expiresAt: number | null;
 }
 
-export interface OptionResult extends PollOption { votes: number; pct: number; }
+export interface OptionResult extends PollOption { votes: number; pct: number; emoji?: string; }
 export interface LeaderboardEntry { participantId: string; name: string; score: number; answered: number; correct: number; }
 export interface WordEntry { text: string; count: number; }
 export interface SentimentResult { score: number; label: "positive" | "neutral" | "negative"; }
 export interface ThemeEntry { label: string; count: number; }
 
+export interface EmojiResult { id: string; emoji?: string; text?: string; count: number; }
+export interface RankingResult { id: string; text: string; score: number; avgRank?: number; points?: number; }
+export interface HeatPoint { x: number; y: number; count?: number; }
+
 export interface PollResults {
   participants: number;
-  totalVotes?: number;
+  totalVotes: number;
   options?: OptionResult[];
   words?: WordEntry[];
   totalResponses?: number;
   sentiment?: SentimentResult;
   themes?: ThemeEntry[];
   questions?: QAQuestion[];
-  leaderboard?: LeaderboardEntry[];
+  leaderboard?: Array<{ name: string; score: number; participantId?: string; correct?: number; answered?: number }>;
   submissions?: PollResponse[];
   average?: number;
   distribution?: Record<string, number>;
   npsScore?: number;
   detractors?: number; passives?: number; promoters?: number;
+  matrix?: Record<string, Record<string, number>>;
+  matrixRows?: MatrixRow[];
+  matrixCols?: MatrixColumn[];
   matrixResults?: Record<string, Record<string, number>>;
+  emojis?: EmojiResult[];
   emojiCounts?: Record<string, number>;
+  heatPoints?: HeatPoint[];
   heatmapPoints?: Array<{ x: number; y: number; count: number }>;
-  rankingResults?: Array<{ id: string; text: string; avgRank: number; points: number }>;
+  heatmapUrl?: string;
+  rankings?: RankingResult[];
+  rankingResults?: RankingResult[];
+  matchResults?: Record<string, number>;
+  matchingPairs?: MatchingPair[];
   matchingResults?: Array<{ left: string; right: string; correct: number; total: number }>;
   bracketResults?: OptionResult[];
-  answers?: string[];
+  answers?: Array<{ text: string; count: number }> | string[];
 }
 
 export interface User { id: string; name: string; email: string; }
