@@ -1,128 +1,114 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 42 33% 93%;
-    --foreground: 0 0% 17%;
-
-    --card: 40 60% 99%;
-    --card-foreground: 0 0% 17%;
-
-    --popover: 40 60% 99%;
-    --popover-foreground: 0 0% 17%;
-
-    --primary: 14 62% 57%;
-    --primary-foreground: 40 60% 99%;
-
-    --secondary: 35 24% 87%;
-    --secondary-foreground: 0 0% 17%;
-
-    --muted: 35 24% 87%;
-    --muted-foreground: 0 0% 42%;
-
-    --accent: 14 62% 57%;
-    --accent-foreground: 40 60% 99%;
-
-    --destructive: 0 48% 58%;
-    --destructive-foreground: 40 60% 99%;
-
-    --border: 30 18% 82%;
-    --input: 30 18% 82%;
-    --ring: 14 62% 57%;
-
-    --radius: 0.75rem;
-
-    --sidebar-background: 40 60% 99%;
-    --sidebar-foreground: 0 0% 17%;
-    --sidebar-primary: 14 62% 57%;
-    --sidebar-primary-foreground: 40 60% 99%;
-    --sidebar-accent: 35 24% 87%;
-    --sidebar-accent-foreground: 0 0% 17%;
-    --sidebar-border: 30 18% 82%;
-    --sidebar-ring: 14 62% 57%;
+    --background: 36 67% 97%;
+    --foreground: 20 14% 18%;
+    --card: 36 50% 98%;
+    --card-foreground: 20 14% 18%;
+    --popover: 36 50% 98%;
+    --popover-foreground: 20 14% 18%;
+    --primary: 17 63% 57%;
+    --primary-foreground: 36 67% 97%;
+    --secondary: 36 40% 92%;
+    --secondary-foreground: 20 14% 18%;
+    --muted: 36 30% 94%;
+    --muted-foreground: 20 10% 46%;
+    --accent: 36 40% 90%;
+    --accent-foreground: 20 14% 18%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 36 30% 88%;
+    --input: 36 30% 88%;
+    --ring: 17 63% 57%;
+    --radius: 0.6rem;
+    --sidebar-background: 36 45% 96%;
+    --sidebar-foreground: 20 14% 18%;
+    --sidebar-border: 36 28% 87%;
   }
+
+  * { @apply border-border; }
+  body {
+    @apply bg-cream-100 text-foreground font-body antialiased;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23D96C4A' fill-opacity='0.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  h1, h2, h3 { @apply font-display; }
 }
 
-@layer base {
-  * {
-    box-sizing: border-box;
+@layer components {
+  /* ── Core cards ── */
+  .op-card {
+    @apply bg-white/90 border border-cream-300 rounded-xl shadow-sm
+           hover:shadow-md transition-all duration-200 hover:-translate-y-0.5;
   }
-  body {
-    @apply font-inter antialiased;
-    background-color: hsl(42, 33%, 93%);
-    color: #2c2c2c;
+  .op-card-flat {
+    @apply bg-white/80 border border-cream-300 rounded-xl;
   }
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-playfair;
+
+  /* ── Sidebar ── */
+  .sidebar-link {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+           text-slate-700 hover:bg-terracotta-50 hover:text-terracotta-600
+           transition-all duration-150;
   }
+  .sidebar-link.active {
+    @apply bg-terracotta-500 text-white shadow-sm;
+  }
+
+  /* ── Stat cards ── */
+  .stat-card {
+    @apply op-card p-5 flex flex-col gap-1;
+  }
+  .stat-value {
+    @apply text-3xl font-display font-bold text-terracotta-600;
+  }
+
+  /* ── Poll type tiles ── */
+  .type-tile {
+    @apply border-2 border-cream-300 rounded-xl p-4 cursor-pointer text-center
+           hover:border-terracotta-400 hover:bg-terracotta-50
+           transition-all duration-150 select-none;
+  }
+  .type-tile.selected {
+    @apply border-terracotta-500 bg-terracotta-50 ring-2 ring-terracotta-200;
+  }
+
+  /* ── Quiz timer ring ── */
+  .timer-ring { transform-origin: center; transition: stroke-dashoffset 1s linear; }
+
+  /* ── Badges ── */
+  .badge-conduct { @apply bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium; }
+  .badge-live    { @apply bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium animate-pulse; }
+  .badge-closed  { @apply bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium; }
+  .badge-draft   { @apply bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium; }
+
+  /* ── Keysheet answer rows ── */
+  .answer-correct { @apply bg-green-50 border-l-4 border-green-500 px-3 py-2 rounded-r-lg; }
+  .answer-wrong   { @apply bg-red-50 border-l-4 border-red-400 px-3 py-2 rounded-r-lg; }
+  .answer-partial { @apply bg-yellow-50 border-l-4 border-yellow-400 px-3 py-2 rounded-r-lg; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-cream-400 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-terracotta-300; }
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
+  .text-gradient {
+    @apply bg-gradient-to-r from-terracotta-600 to-terracotta-400 bg-clip-text text-transparent;
   }
-  .glass {
-    background: rgba(253,249,243,0.8);
-    backdrop-filter: blur(16px);
-  }
-  .terracotta-glow {
-    box-shadow: 0 0 30px rgba(217, 108, 74, 0.2);
-  }
-  .mesh-gradient {
-    background: 
-      radial-gradient(ellipse at 20% 30%, rgba(217, 108, 74, 0.08) 0%, transparent 50%),
-      radial-gradient(ellipse at 80% 70%, rgba(135, 168, 120, 0.06) 0%, transparent 50%),
-      radial-gradient(ellipse at 50% 50%, rgba(212, 165, 116, 0.04) 0%, transparent 60%);
-  }
-  .noise-bg {
-    position: relative;
-  }
-  .noise-bg::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    opacity: 0.03;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 0;
-  }
+  .page-enter { animation: fadeIn 0.35s ease-out both; }
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #E5DDD3;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #D96C4A;
-}
-
-/* Stepper animation */
-@keyframes step-fill {
-  from { width: 0; }
-  to { width: 100%; }
-}
-
-/* Bar fill animation */
-.bar-fill {
-  transition: width 0.6s ease;
-}
-
-/* Fade in */
-.fade-in {
-  animation: fadeIn 0.3s ease;
-}
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
 }

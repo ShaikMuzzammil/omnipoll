@@ -1,89 +1,132 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Search, ArrowRight, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import DashboardLayout from '@/components/DashboardLayout';
-import { createPoll } from '@/lib/api';
-import { POLL_TYPE_META } from '@/lib/types';
-import { useApp } from '@/context/AppContext';
+import { Layers, Search, Loader2, Plus, Trash2, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
-import type { PollType } from '@/lib/types';
+import { templatesApi } from '@/lib/api';
+import { pollTypeIcon, pollTypeLabel } from '@/lib/utils';
 
-function gid() { const a=new Uint8Array(8); crypto.getRandomValues(a); const c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjklmnpqrstuvwxyz23456789'; return Array.from(a,b=>c[b%c.length]).join(''); }
+const BUILTIN = [
+  { id:'b1', title:'Student Satisfaction Survey', type:'multiple_choice', category:'Education', description:'Quick 5-question satisfaction check' },
+  { id:'b2', title:'Weekly Knowledge Quiz',        type:'quiz',            category:'Education', description:'10-question scored quiz template' },
+  { id:'b3', title:'NPS Customer Feedback',        type:'nps',             category:'Business',  description:'Net Promoter Score with follow-up' },
+  { id:'b4', title:'Team Retrospective',           type:'rating',          category:'Business',  description:'Rate the sprint across 5 dimensions' },
+  { id:'b5', title:'Live Classroom Poll',          type:'word_cloud',      category:'Education', description:'Gather one-word responses live' },
+  { id:'b6', title:'Event Feedback Form',          type:'matrix',          category:'Events',    description:'Rate multiple aspects of an event' },
+  { id:'b7', title:'True/False Quick Check',       type:'true_false',      category:'Education', description:'Fast knowledge verification' },
+  { id:'b8', title:'Priority Ranking',             type:'priority',        category:'Business',  description:'100-point allocation across options' },
+  { id:'b9', title:'Live Q&A Session',             type:'qa',              category:'Events',    description:'Audience questions with upvoting' },
+  { id:'b10',title:'Emoji Pulse Check',            type:'emoji',           category:'Education', description:'Quick mood/reaction check' },
+] as const;
 
-const TEMPLATES = [
-  {id:'nps',    cat:'Business',  title:'Customer satisfaction (NPS)', type:'nps'           as PollType, question:'How likely are you to recommend us?', options:[], icon:'📈'},
-  {id:'mc-team',cat:'Work',      title:'Team standup check-in', type:'multiple_choice'     as PollType, question:'How are you feeling about your workload today?', options:[{id:gid(),text:'✅ On track'},{id:gid(),text:'⚡ Busy but fine'},{id:gid(),text:'🔥 Overwhelmed'},{id:gid(),text:'😴 Slow day'}], icon:'🏢'},
-  {id:'quiz',   cat:'Education', title:'General knowledge quiz', type:'quiz'               as PollType, question:'Test your knowledge!', options:[], icon:'🏆'},
-  {id:'wc',     cat:'Brainstorm',title:'Brainstorm session',     type:'word_cloud'         as PollType, question:'What words come to mind about our product?', options:[], icon:'💡'},
-  {id:'rating', cat:'Events',    title:'Event feedback',         type:'rating'             as PollType, question:"How would you rate today's event?", options:[], icon:'🎉'},
-  {id:'qa',     cat:'Presentations',title:'Q&A session',         type:'qa'                 as PollType, question:'What questions do you have?', options:[], icon:'❓'},
-  {id:'prio',   cat:'Product',   title:'Feature prioritization', type:'prioritization'     as PollType, question:'Which features should we build next?', options:[{id:gid(),text:'Mobile app'},{id:gid(),text:'Dark mode'},{id:gid(),text:'API access'},{id:gid(),text:'Better analytics'}], icon:'🎯'},
-  {id:'tf',     cat:'Fun',       title:'True or false trivia',   type:'true_false'         as PollType, question:'The Great Wall of China is visible from space.', options:[{id:'true',text:'True'},{id:'false',text:'False'}], icon:'✅'},
-  {id:'emoji',  cat:'Fun',       title:'Team mood check',        type:'emoji_reaction'     as PollType, question:'How are you feeling right now?', options:[], icon:'😊'},
-  {id:'open',   cat:'Business',  title:'Open feedback',          type:'open_text'          as PollType, question:'What could we do better?', options:[], icon:'💬'},
-  {id:'nps2',   cat:'Research',  title:'Agreement scale',        type:'rating'             as PollType, question:'I feel satisfied with the current process.', options:[], icon:'📊'},
-  {id:'match',  cat:'Education', title:'Live matching exercise',  type:'live_matching'     as PollType, question:'Match the following items:', options:[], icon:'🔗'},
-];
-const CATS = ['All', ...Array.from(new Set(TEMPLATES.map(t=>t.cat)))];
+const CATS = ['All','Education','Business','Events'] as const;
+
+interface Template { id:string; title:string; type:string; description?:string; category?:string; pollId?:string }
 
 export default function Templates() {
-  const navigate = useNavigate();
-  const { user } = useApp();
-  const [search, setSearch] = useState('');
-  const [cat, setCat] = useState('All');
-  const [loading, setLoading] = useState<string|null>(null);
+  const navigate   = useNavigate();
+  const qc         = useQueryClient();
+  const [search, setSearch]   = useState('');
+  const [cat,    setCat]      = useState<typeof CATS[number]>('All');
 
-  const filtered = TEMPLATES.filter(t=>{
-    const mc = cat==='All'||t.cat===cat;
-    const ms = !search||t.title.toLowerCase().includes(search.toLowerCase());
-    return mc&&ms;
+  const { data: saved = [] } = useQuery<Template[]>({
+    queryKey: ['templates'],
+    queryFn: () => templatesApi.list() as Promise<Template[]>,
   });
 
-  const useTemplate = async (t: typeof TEMPLATES[0]) => {
-    setLoading(t.id);
-    try {
-      const data = await createPoll({title:t.title,question:t.question,type:t.type,creatorId:user?.id||'',options:t.options,quizQuestions:[],settings:{showResults:true,oneVote:true}}) as {poll:{id:string}};
-      toast.success('Poll created from template! 🎉');
-      navigate(`/present/${data.poll.id}`);
-    } catch { toast.error('Failed to create poll'); }
-    finally { setLoading(null); }
+  const delMut = useMutation({
+    mutationFn: (id:string) => templatesApi.delete(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey:['templates'] }); toast.success('Template deleted'); },
+  });
+
+  const allTemplates = [
+    ...BUILTIN.map(t => ({ ...t, isBuiltin: true })),
+    ...saved.map(t => ({ ...t, isBuiltin: false, category: 'Saved' })),
+  ];
+
+  const filtered = allTemplates.filter(t => {
+    const matchSearch = !search || t.title.toLowerCase().includes(search.toLowerCase());
+    const matchCat    = cat === 'All' || t.category === cat || (cat === 'Education' && !t.category);
+    return matchSearch && matchCat;
+  });
+
+  const useTemplate = (t: typeof allTemplates[0]) => {
+    navigate(`/create?type=${t.type}&template=${t.id}`);
   };
 
   return (
-    <DashboardLayout title="Templates">
-      <div className="p-6 max-w-5xl mx-auto space-y-6">
-        <div><h1 className="font-playfair text-2xl font-bold text-foreground mb-1">Poll Templates</h1><p className="text-muted-foreground text-sm">Start with a ready-made template</p></div>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/><Input placeholder="Search templates…" value={search} onChange={e=>setSearch(e.target.value)} className="pl-9"/></div>
-          <div className="flex gap-2 flex-wrap">
-            {CATS.map(c=><button key={c} onClick={()=>setCat(c)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${cat===c?'bg-terracotta text-white border-terracotta':'border-border text-muted-foreground hover:border-terracotta/50'}`}>{c}</button>)}
-          </div>
+    <div className="space-y-6 page-enter">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-slate-800">Templates</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Start from a proven template</p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((t,i)=>{
-            const meta=POLL_TYPE_META[t.type];
-            return (
-              <motion.div key={t.id} initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
-                className="bg-card border border-border rounded-xl p-5 hover:shadow-md hover:-translate-y-0.5 transition-all">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="text-3xl">{t.icon}</div>
-                  <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{t.cat}</span>
-                </div>
-                <h3 className="font-semibold text-foreground text-sm mb-1">{t.title}</h3>
-                <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{t.question}</p>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4"><span>{meta.icon}</span><span>{meta.label}</span></div>
-                <Button size="sm" className="w-full gap-1.5 text-xs" onClick={()=>useTemplate(t)} disabled={loading===t.id}>
-                  {loading===t.id?<span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"/>:<><Sparkles className="w-3 h-3"/>Use template<ArrowRight className="w-3 h-3 ml-auto"/></>}
-                </Button>
-              </motion.div>
-            );
-          })}
-        </div>
-        {filtered.length===0&&<div className="text-center py-12 text-muted-foreground"><Search className="w-10 h-10 mx-auto mb-3 opacity-30"/><p>No templates match</p></div>}
+        <Link to="/create" className="flex items-center gap-2 bg-terracotta-500 hover:bg-terracotta-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm">
+          <Plus size={15}/> Create Custom
+        </Link>
       </div>
-    </DashboardLayout>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1 max-w-xs">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search templates…"
+            className="w-full pl-8 pr-3 py-2 border border-cream-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-200"/>
+        </div>
+        <div className="flex gap-1">
+          {[...CATS, 'Saved' as const].map(c => (
+            <button key={c} onClick={() => setCat(c === 'Saved' ? 'All' : c as typeof cat)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${cat === c ? 'bg-terracotta-500 text-white' : 'bg-white border border-cream-300 text-slate-600 hover:border-terracotta-300'}`}>
+              {c}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 bg-white/60 border border-cream-300 rounded-2xl">
+          <Layers size={40} className="mx-auto mb-3 text-slate-300"/>
+          <p className="text-slate-500">No templates found</p>
+        </div>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((t, i) => (
+            <motion.div key={t.id} initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} transition={{ delay:i*0.04 }}
+              className="op-card p-5 flex flex-col gap-3">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">{pollTypeIcon(t.type as Parameters<typeof pollTypeIcon>[0])}</span>
+                  <div>
+                    <p className="text-xs text-slate-500 font-medium">{pollTypeLabel(t.type as Parameters<typeof pollTypeLabel>[0])}</p>
+                    {t.category && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                        t.category === 'Education' ? 'bg-blue-100 text-blue-700' :
+                        t.category === 'Business'  ? 'bg-green-100 text-green-700' :
+                        t.category === 'Events'    ? 'bg-purple-100 text-purple-700' :
+                        'bg-terracotta-100 text-terracotta-700'
+                      }`}>{t.category}</span>
+                    )}
+                  </div>
+                </div>
+                {!('isBuiltin' in t && t.isBuiltin) && (
+                  <button onClick={() => delMut.mutate(t.id)} className="p-1 hover:bg-red-100 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
+                    <Trash2 size={13}/>
+                  </button>
+                )}
+              </div>
+              <div className="flex-1">
+                <h3 className="font-display font-semibold text-slate-800 mb-1">{t.title}</h3>
+                {t.description && <p className="text-xs text-slate-500 leading-relaxed">{t.description}</p>}
+              </div>
+              <button onClick={() => useTemplate(t)}
+                className="w-full flex items-center justify-center gap-2 py-2 bg-terracotta-50 hover:bg-terracotta-100 border border-terracotta-200 text-terracotta-700 rounded-xl text-sm font-semibold transition-all">
+                Use Template <ArrowRight size={14}/>
+              </button>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,365 +1,370 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, ChevronRight, ChevronLeft, Check, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
-import DashboardLayout from '@/components/DashboardLayout';
-import { createPoll } from '@/lib/api';
-import { POLL_TYPE_META } from '@/lib/types';
-import { useApp } from '@/context/AppContext';
+import { Plus, Trash2, ChevronRight, ChevronLeft, Check, Loader2, GripVertical } from 'lucide-react';
 import { toast } from 'sonner';
-import type { PollType } from '@/lib/types';
+import { pollsApi } from '@/lib/api';
+import { pollTypeLabel, pollTypeIcon } from '@/lib/utils';
+import type { PollType, PollOption, PollSettings } from '@/lib/types';
 
-const STEPS = ['Type','Question','Options','Settings','Review'];
-
-function genId() {
-  const arr = new Uint8Array(8);
-  crypto.getRandomValues(arr);
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjklmnpqrstuvwxyz23456789';
-  return Array.from(arr, b => chars[b % chars.length]).join('');
-}
-
-interface Opt { id: string; text: string; }
-interface QQ { id:string; questionText:string; options:Opt[]; correctAnswer:string; points:number; timeLimit:number; }
-interface MR { id:string; label:string; }
-interface MP { id:string; left:string; right:string; }
-
-const TYPE_GROUPS = [
-  { label:'Free',    types:['multiple_choice','word_cloud','qa','quiz','rating'] as PollType[] },
-  { label:'Starter', types:['true_false','emoji_reaction','open_text','nps','matrix','image_choice','ranking'] as PollType[] },
-  { label:'Pro',     types:['slider','fill_blank','bracket','prioritization','heatmap','live_matching','poll_series','countdown_vote'] as PollType[] },
+const ALL_TYPES: PollType[] = [
+  'multiple_choice','quiz','word_cloud','qa','nps','rating',
+  'slider','ranking','matrix','priority','heatmap','emoji',
+  'bracket','fill_blank','matching','true_false','image_choice',
+  'countdown','series','open_ended',
 ];
 
-export default function Create() {
-  const navigate = useNavigate();
-  const { user, loading: authLoading } = useApp();
-  const [step, setStep] = useState(0);
-  const [saving, setSaving] = useState(false);
+const DEFAULT_SETTINGS: PollSettings = {
+  allowAnonymous: true, requireLogin: false, oneResponsePerUser: true,
+  showResultsLive: true, showCorrectAnswers: false, showKeySheetAfter: true,
+  shuffleOptions: false, shuffleQuestions: false,
+  preventTabSwitch: false, showProgressBar: true, allowReview: true,
+};
 
-  const [type, setType] = useState<PollType>('multiple_choice');
-  const [question, setQuestion] = useState('');
-  const [description, setDescription] = useState('');
-  const [options, setOptions] = useState<Opt[]>([{ id:genId(), text:'Option A' },{ id:genId(), text:'Option B' }]);
-  const [quizQs, setQuizQs] = useState<QQ[]>([{
-    id:genId(), questionText:'Question 1',
-    options:[{id:genId(),text:'A'},{id:genId(),text:'B'},{id:genId(),text:'C'},{id:genId(),text:'D'}],
-    correctAnswer:'', points:10, timeLimit:20
-  }]);
-  const [matrixRows, setMatrixRows] = useState<MR[]>([{id:genId(),label:'Row 1'},{id:genId(),label:'Row 2'}]);
-  const [matrixCols, setMatrixCols] = useState<MR[]>([{id:genId(),label:'Agree'},{id:genId(),label:'Neutral'},{id:genId(),label:'Disagree'}]);
-  const [matchPairs, setMatchPairs] = useState<MP[]>([{id:genId(),left:'Item 1',right:'Match 1'},{id:genId(),left:'Item 2',right:'Match 2'}]);
-  const [sentence, setSentence] = useState('The best way to learn is ___.');
-  const [sliderMin, setSliderMin] = useState(0);
-  const [sliderMax, setSliderMax] = useState(100);
-  const [heatmapUrl, setHeatmapUrl] = useState('https://images.unsplash.com/photo-1551434678-e076c223a692?w=800&q=80');
-  const [duration, setDuration] = useState('');
-  const [multiSelect, setMultiSelect] = useState(false);
-  const [showResults, setShowResults] = useState(true);
-  const [oneVote, setOneVote] = useState(true);
+const STEPS = ['Type', 'Content', 'Settings', 'Preview'];
 
+export default function Create({ editMode = false }: { editMode?: boolean }) {
+  const navigate       = useNavigate();
+  const [params]       = useSearchParams();
+  const { pollId }     = useParams();
+  const [step, setStep]= useState(0);
+  const [loading, setLoading] = useState(false);
+
+  const [type,     setType]     = useState<PollType>((params.get('type') as PollType) ?? 'multiple_choice');
+  const [title,    setTitle]    = useState('');
+  const [desc,     setDesc]     = useState('');
+  const [options,  setOptions]  = useState<PollOption[]>([
+    { id: '1', text: '', isCorrect: false },
+    { id: '2', text: '', isCorrect: false },
+  ]);
+  const [matrixRows, setMatrixRows] = useState([{ id:'r1', text:'' },{ id:'r2', text:'' }]);
+  const [matrixCols, setMatrixCols] = useState([{ id:'c1', text:'' },{ id:'c2', text:'' }]);
+  const [settings, setSettings] = useState<PollSettings>(DEFAULT_SETTINGS);
+  const [classroomId, setClassroomId] = useState('');
+
+  // Load for edit mode
   useEffect(() => {
-    if (!authLoading && !user) navigate('/login');
-  }, [user, authLoading, navigate]);
+    if (editMode && pollId) {
+      pollsApi.get(pollId).then((p: unknown) => {
+        const poll = p as { title:string; description?:string; type:PollType; options:PollOption[]; matrixRows?:{id:string;text:string}[]; matrixCols?:{id:string;text:string}[]; settings:PollSettings; classroomId?:string };
+        setTitle(poll.title); setDesc(poll.description ?? '');
+        setType(poll.type); setOptions(poll.options);
+        if (poll.matrixRows) setMatrixRows(poll.matrixRows);
+        if (poll.matrixCols) setMatrixCols(poll.matrixCols);
+        setSettings(poll.settings);
+        if (poll.classroomId) setClassroomId(poll.classroomId);
+      }).catch(() => toast.error('Failed to load poll'));
+    }
+  }, [editMode, pollId]);
 
-  const meta = POLL_TYPE_META[type];
-  const needsOptions = !['word_cloud','open_text','qa','rating','nps','slider','fill_blank','heatmap','matrix','live_matching','emoji_reaction','quiz'].includes(type);
+  const addOption = () => setOptions(prev => [...prev, { id: Date.now().toString(), text: '', isCorrect: false }]);
+  const removeOption = (id: string) => setOptions(prev => prev.filter(o => o.id !== id));
+  const updateOption = (id: string, field: keyof PollOption, value: unknown) =>
+    setOptions(prev => prev.map(o => o.id === id ? { ...o, [field]: value } : o));
+  const setCorrect = (id: string) => {
+    if (['multiple_choice','quiz','true_false','image_choice'].includes(type)) {
+      setOptions(prev => prev.map(o => ({ ...o, isCorrect: o.id === id })));
+    }
+  };
 
-  const addOpt = () => setOptions(o => [...o, { id:genId(), text:`Option ${String.fromCharCode(65+o.length)}` }]);
-  const removeOpt = (id:string) => setOptions(o => o.filter(x => x.id !== id));
-  const updateOpt = (id:string, text:string) => setOptions(o => o.map(x => x.id===id ? {...x,text} : x));
+  const needsOptions = !['word_cloud','qa','nps','slider','heatmap','countdown','open_ended'].includes(type);
+  const isQuizLike   = ['quiz','multiple_choice','true_false'].includes(type);
 
-  const handleCreate = async () => {
-    if (!question.trim()) { toast.error('Question is required'); return; }
-    setSaving(true);
+  const handleSubmit = async () => {
+    if (!title.trim()) { toast.error('Please add a title'); return; }
+    setLoading(true);
     try {
-      const body = {
-        title: question, question, description, type,
-        creatorId: user?.id || '',
-        options: needsOptions ? options : [],
-        quizQuestions: type === 'quiz' ? quizQs : [],
-        settings: {
-          duration: duration ? Number(duration) : null,
-          multiSelect, showResults, oneVote,
-          min: sliderMin, max: sliderMax,
-          sentence,
-          matrixRows: type==='matrix' ? matrixRows : [],
-          matrixColumns: type==='matrix' ? matrixCols : [],
-          matchingPairs: type==='live_matching' ? matchPairs : [],
-          imageUrl: type==='heatmap' ? heatmapUrl : undefined,
-        },
+      const payload = {
+        title, description: desc, type,
+        options: needsOptions ? options.filter(o => o.text.trim()) : [],
+        matrixRows: type === 'matrix' ? matrixRows : undefined,
+        matrixCols: type === 'matrix' ? matrixCols : undefined,
+        settings, classroomId: classroomId || undefined,
       };
-      const data = await createPoll(body) as { poll: { id:string } };
-      toast.success('Poll created! 🎉');
-      navigate(`/present/${data.poll.id}`);
-    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Failed to create'); }
-    finally { setSaving(false); }
+      if (editMode && pollId) {
+        await pollsApi.update(pollId, payload);
+        toast.success('Poll updated!');
+        navigate(`/results/${pollId}`);
+      } else {
+        const res = await pollsApi.create(payload) as { id: string };
+        toast.success('Poll created!');
+        navigate(`/results/${res.id}`);
+      }
+    } catch (e: unknown) {
+      toast.error((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
   };
-
-  // ── Step 0: Type ──
-  const TypeStep = () => (
-    <div className="space-y-5">
-      <div><h2 className="font-playfair text-xl font-bold mb-1">Choose poll type</h2>
-        <p className="text-sm text-muted-foreground">Select the interaction style for your audience</p></div>
-      {TYPE_GROUPS.map(({ label, types }) => (
-        <div key={label}>
-          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{label}</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {types.map(t => {
-              const m = POLL_TYPE_META[t], active = type === t;
-              return (
-                <button key={t} onClick={() => setType(t)}
-                  className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${
-                    active ? 'border-terracotta bg-terracotta/5 ring-1 ring-terracotta' : 'border-border hover:border-terracotta/40 hover:bg-accent'
-                  }`}>
-                  <span className="text-xl">{m.icon}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{m.label}</div>
-                    <div className="text-xs text-muted-foreground truncate">{m.desc}</div>
-                  </div>
-                  {active && <Check className="w-4 h-4 text-terracotta flex-shrink-0" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-
-  // ── Step 1: Question ──
-  const QuestionStep = () => (
-    <div className="space-y-5">
-      <div className="flex items-center gap-3 p-4 bg-accent/50 rounded-xl">
-        <span className="text-3xl">{meta.icon}</span>
-        <div><div className="font-semibold">{meta.label}</div><div className="text-xs text-muted-foreground">{meta.desc}</div></div>
-      </div>
-      <div className="space-y-1.5">
-        <Label>Question / Title *</Label>
-        <Textarea placeholder="What do you want to ask your audience?" value={question} onChange={e => setQuestion(e.target.value)} className="min-h-[80px]" autoFocus />
-      </div>
-      <div className="space-y-1.5">
-        <Label>Description (optional)</Label>
-        <Input placeholder="Add context or instructions…" value={description} onChange={e => setDescription(e.target.value)} />
-      </div>
-    </div>
-  );
-
-  // ── Step 2: Options ──
-  const OptionsStep = () => {
-    if (['word_cloud','open_text','qa','rating','nps','heatmap'].includes(type))
-      return <p className="text-sm text-muted-foreground italic py-4">No options needed — participants enter free-form responses.</p>;
-
-    if (type === 'slider') return (
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1.5"><Label>Min value</Label><Input type="number" value={sliderMin} onChange={e=>setSliderMin(Number(e.target.value))} /></div>
-        <div className="space-y-1.5"><Label>Max value</Label><Input type="number" value={sliderMax} onChange={e=>setSliderMax(Number(e.target.value))} /></div>
-      </div>
-    );
-
-    if (type === 'fill_blank') return (
-      <div className="space-y-1.5">
-        <Label>Sentence with blank (use ___ for the gap)</Label>
-        <Input value={sentence} onChange={e=>setSentence(e.target.value)} placeholder="The best way to learn is ___." />
-      </div>
-    );
-
-    if (type === 'heatmap') return (
-      <div className="space-y-1.5">
-        <Label>Image URL</Label>
-        <Input value={heatmapUrl} onChange={e=>setHeatmapUrl(e.target.value)} />
-        {heatmapUrl && <img src={heatmapUrl} alt="" className="rounded-lg max-h-48 object-cover w-full" />}
-      </div>
-    );
-
-    if (type === 'matrix') return (
-      <div className="space-y-4">
-        <div><Label className="mb-2 block">Rows</Label>
-          {matrixRows.map((r,i) => (
-            <div key={r.id} className="flex gap-2 mb-2">
-              <Input value={r.label} onChange={e=>setMatrixRows(rows=>rows.map(x=>x.id===r.id?{...x,label:e.target.value}:x))} placeholder={`Row ${i+1}`} />
-              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={()=>setMatrixRows(rows=>rows.filter(x=>x.id!==r.id))}><Trash2 className="w-4 h-4"/></Button>
-            </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={()=>setMatrixRows(r=>[...r,{id:genId(),label:`Row ${r.length+1}`}])}>+ Row</Button>
-        </div>
-        <div><Label className="mb-2 block">Columns</Label>
-          {matrixCols.map((c,i) => (
-            <div key={c.id} className="flex gap-2 mb-2">
-              <Input value={c.label} onChange={e=>setMatrixCols(cols=>cols.map(x=>x.id===c.id?{...x,label:e.target.value}:x))} placeholder={`Col ${i+1}`} />
-              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={()=>setMatrixCols(cols=>cols.filter(x=>x.id!==c.id))}><Trash2 className="w-4 h-4"/></Button>
-            </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={()=>setMatrixCols(c=>[...c,{id:genId(),label:`Col ${c.length+1}`}])}>+ Column</Button>
-        </div>
-      </div>
-    );
-
-    if (type === 'live_matching') return (
-      <div className="space-y-3">
-        <Label>Matching Pairs</Label>
-        {matchPairs.map((p,i) => (
-          <div key={p.id} className="flex gap-2 items-center">
-            <Input value={p.left} onChange={e=>setMatchPairs(ps=>ps.map(x=>x.id===p.id?{...x,left:e.target.value}:x))} placeholder={`Left ${i+1}`} />
-            <span className="text-muted-foreground">→</span>
-            <Input value={p.right} onChange={e=>setMatchPairs(ps=>ps.map(x=>x.id===p.id?{...x,right:e.target.value}:x))} placeholder={`Right ${i+1}`} />
-            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={()=>setMatchPairs(ps=>ps.filter(x=>x.id!==p.id))}><Trash2 className="w-4 h-4"/></Button>
-          </div>
-        ))}
-        <Button variant="outline" size="sm" onClick={()=>setMatchPairs(p=>[...p,{id:genId(),left:`Item ${p.length+1}`,right:`Match ${p.length+1}`}])}>+ Pair</Button>
-      </div>
-    );
-
-    if (type === 'emoji_reaction') return (
-      <div><p className="text-sm text-muted-foreground mb-3">Participants choose from these emojis:</p>
-        <div className="flex flex-wrap gap-3">
-          {['😄','😂','❤️','👏','🔥','😮','😢','👍','🚀','🎉'].map(e=>(
-            <div key={e} className="w-12 h-12 bg-accent rounded-xl flex items-center justify-center text-2xl">{e}</div>
-          ))}
-        </div>
-      </div>
-    );
-
-    if (type === 'quiz') return (
-      <div className="space-y-4">
-        {quizQs.map((q,qi) => (
-          <div key={q.id} className="border border-border rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold">Q{qi+1}</span>
-              <Button variant="ghost" size="sm" className="h-7 text-destructive" onClick={()=>setQuizQs(qs=>qs.filter(x=>x.id!==q.id))}><Trash2 className="w-3.5 h-3.5"/></Button>
-            </div>
-            <Input value={q.questionText} onChange={e=>setQuizQs(qs=>qs.map(x=>x.id===q.id?{...x,questionText:e.target.value}:x))} placeholder="Quiz question…" />
-            <div className="grid grid-cols-2 gap-2">
-              {q.options.map(o => (
-                <div key={o.id} className={`flex gap-1.5 items-center p-2 rounded-lg border cursor-pointer ${q.correctAnswer===o.id?'border-green-500 bg-green-50 dark:bg-green-950/30':'border-border'}`}
-                  onClick={()=>setQuizQs(qs=>qs.map(x=>x.id===q.id?{...x,correctAnswer:o.id}:x))}>
-                  <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${q.correctAnswer===o.id?'border-green-500 bg-green-500':'border-muted-foreground'}`}/>
-                  <Input value={o.text} className="border-0 p-0 h-auto bg-transparent text-xs focus-visible:ring-0"
-                    onChange={e=>setQuizQs(qs=>qs.map(x=>x.id===q.id?{...x,options:x.options.map(op=>op.id===o.id?{...op,text:e.target.value}:op)}:x))} />
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-3">
-              <div className="flex-1 space-y-1"><Label className="text-xs">Points</Label><Input type="number" value={q.points} onChange={e=>setQuizQs(qs=>qs.map(x=>x.id===q.id?{...x,points:Number(e.target.value)}:x))}/></div>
-              <div className="flex-1 space-y-1"><Label className="text-xs">Time (s)</Label><Input type="number" value={q.timeLimit} onChange={e=>setQuizQs(qs=>qs.map(x=>x.id===q.id?{...x,timeLimit:Number(e.target.value)}:x))}/></div>
-            </div>
-          </div>
-        ))}
-        <Button variant="outline" onClick={()=>setQuizQs(qs=>[...qs,{id:genId(),questionText:`Q${qs.length+1}`,options:['A','B','C','D'].map(l=>({id:genId(),text:`Answer ${l}`})),correctAnswer:'',points:10,timeLimit:20}])}>+ Question</Button>
-      </div>
-    );
-
-    return (
-      <div className="space-y-3">
-        <Label>Options</Label>
-        {options.map((opt,i) => (
-          <div key={opt.id} className="flex gap-2 items-center">
-            <Input value={opt.text} onChange={e=>updateOpt(opt.id,e.target.value)} placeholder={`Option ${i+1}`} />
-            {options.length > 2 && <Button variant="ghost" size="icon" className="h-9 w-9" onClick={()=>removeOpt(opt.id)}><Trash2 className="w-4 h-4 text-muted-foreground"/></Button>}
-          </div>
-        ))}
-        {options.length < 10 && <Button variant="outline" size="sm" onClick={addOpt} className="gap-1.5"><Plus className="w-4 h-4"/>Add option</Button>}
-      </div>
-    );
-  };
-
-  // ── Step 3: Settings ──
-  const SettingsStep = () => (
-    <div className="space-y-4">
-      {[
-        { label:'Show live results', desc:'Participants see results while voting', val:showResults, set:setShowResults },
-        { label:'One vote per person', desc:'Prevent duplicate submissions', val:oneVote, set:setOneVote },
-      ].map(({ label, desc, val, set }) => (
-        <div key={label} className="flex items-center justify-between py-3 border-b border-border">
-          <div><div className="text-sm font-medium">{label}</div><div className="text-xs text-muted-foreground">{desc}</div></div>
-          <Switch checked={val} onCheckedChange={set} />
-        </div>
-      ))}
-      {['multiple_choice','image_choice'].includes(type) && (
-        <div className="flex items-center justify-between py-3 border-b border-border">
-          <div><div className="text-sm font-medium">Allow multiple selections</div><div className="text-xs text-muted-foreground">Pick more than one option</div></div>
-          <Switch checked={multiSelect} onCheckedChange={setMultiSelect} />
-        </div>
-      )}
-      <div className="space-y-1.5 py-3">
-        <Label>Auto-close after (seconds, optional)</Label>
-        <Input type="number" value={duration} onChange={e=>setDuration(e.target.value)} placeholder="e.g. 60" className="max-w-[160px]" />
-      </div>
-    </div>
-  );
-
-  // ── Step 4: Review ──
-  const ReviewStep = () => (
-    <div className="space-y-4">
-      <div className="p-4 bg-accent/50 rounded-xl">
-        <div className="flex items-center gap-3 mb-2">
-          <span className="text-3xl">{meta.icon}</span>
-          <div><div className="font-semibold">{meta.label}</div>
-            <div className="font-playfair text-lg font-bold mt-0.5">{question}</div></div>
-        </div>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
-      </div>
-      {needsOptions && options.length > 0 && (
-        <div className="space-y-1">
-          {options.map(o => <div key={o.id} className="text-sm py-1.5 px-3 bg-card border border-border rounded-lg">{o.text}</div>)}
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div className="p-3 bg-card border border-border rounded-lg"><div className="text-xs text-muted-foreground mb-0.5">Show results</div><div className="font-medium">{showResults?'Yes':'No'}</div></div>
-        <div className="p-3 bg-card border border-border rounded-lg"><div className="text-xs text-muted-foreground mb-0.5">One vote</div><div className="font-medium">{oneVote?'Yes':'No'}</div></div>
-        {duration && <div className="p-3 bg-card border border-border rounded-lg"><div className="text-xs text-muted-foreground mb-0.5">Duration</div><div className="font-medium">{duration}s</div></div>}
-      </div>
-    </div>
-  );
-
-  const STEP_CONTENT = [TypeStep, QuestionStep, OptionsStep, SettingsStep, ReviewStep];
-  const CurrentStep = STEP_CONTENT[step];
 
   return (
-    <DashboardLayout title="Create Poll">
-      <div className="p-6 max-w-2xl mx-auto">
+    <div className="max-w-3xl mx-auto page-enter">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="font-display text-2xl font-bold text-slate-800">
+          {editMode ? 'Edit Poll' : 'Create a new poll'}
+        </h1>
         {/* Progress */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-3">
-            {STEPS.map((s,i) => (
-              <div key={s} className="flex items-center">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                  i<step?'bg-terracotta text-white':i===step?'bg-terracotta text-white ring-4 ring-terracotta/20':'bg-muted text-muted-foreground'
-                }`}>
-                  {i<step?<Check className="w-4 h-4"/>:i+1}
-                </div>
-                {i<STEPS.length-1 && <div className={`h-0.5 mx-1 transition-all ${i<step?'bg-terracotta':'bg-border'}`} style={{width:'40px'}}/>}
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-between text-xs text-muted-foreground">{STEPS.map(s=><span key={s}>{s}</span>)}</div>
+        <div className="flex items-center gap-2 mt-4">
+          {STEPS.map((s, i) => (
+            <div key={s} className="flex items-center gap-2 flex-1 last:flex-none">
+              <button
+                onClick={() => i < step && setStep(i)}
+                className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold transition-all ${
+                  i < step ? 'bg-green-500 text-white cursor-pointer' :
+                  i === step ? 'bg-terracotta-500 text-white' :
+                  'bg-cream-300 text-slate-500'
+                }`}
+              >
+                {i < step ? <Check size={13}/> : i + 1}
+              </button>
+              <span className={`text-xs font-medium ${i === step ? 'text-terracotta-700' : 'text-slate-400'}`}>{s}</span>
+              {i < STEPS.length - 1 && <div className={`flex-1 h-0.5 rounded ${i < step ? 'bg-green-300' : 'bg-cream-300'}`}/>}
+            </div>
+          ))}
         </div>
+      </div>
 
+      <div className="op-card p-6">
         <AnimatePresence mode="wait">
-          <motion.div key={step} initial={{opacity:0,x:16}} animate={{opacity:1,x:0}} exit={{opacity:0,x:-16}} transition={{duration:0.15}}
-            className="bg-card border border-border rounded-2xl p-6 mb-6 shadow-sm min-h-[300px]">
-            <CurrentStep />
-          </motion.div>
+          {/* STEP 0: Poll type selection */}
+          {step === 0 && (
+            <motion.div key="step0" initial={{ opacity:0, x:20 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0, x:-20 }}>
+              <h2 className="font-display font-semibold text-slate-800 mb-4">Choose a poll type</h2>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {ALL_TYPES.map(t => (
+                  <button key={t} onClick={() => setType(t)}
+                    className={`type-tile ${type === t ? 'selected' : ''}`}>
+                    <span className="text-2xl block mb-1">{pollTypeIcon(t)}</span>
+                    <span className="text-xs font-medium text-slate-600 leading-tight">{pollTypeLabel(t)}</span>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* STEP 1: Content */}
+          {step === 1 && (
+            <motion.div key="step1" initial={{ opacity:0, x:20 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0, x:-20 }} className="space-y-5">
+              <div className="flex items-center gap-2 text-sm text-slate-500 bg-cream-100 px-3 py-2 rounded-lg">
+                <span className="text-xl">{pollTypeIcon(type)}</span>
+                <span className="font-medium text-terracotta-700">{pollTypeLabel(type)}</span>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Title *</label>
+                <input value={title} onChange={e => setTitle(e.target.value)} placeholder="What's your question?"
+                  className="w-full px-3.5 py-2.5 border border-cream-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-300 bg-white"/>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Description <span className="text-slate-400 font-normal">(optional)</span></label>
+                <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2} placeholder="Additional context or instructions…"
+                  className="w-full px-3.5 py-2.5 border border-cream-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-300 bg-white resize-none"/>
+              </div>
+
+              {/* Options */}
+              {needsOptions && type !== 'matrix' && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-semibold text-slate-700">
+                      Options {isQuizLike && <span className="text-xs text-slate-400 font-normal ml-1">— click the circle to mark correct</span>}
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    {options.map((opt, idx) => (
+                      <div key={opt.id} className="flex items-center gap-2">
+                        <GripVertical size={14} className="text-slate-300 flex-shrink-0" />
+                        {isQuizLike && (
+                          <button onClick={() => setCorrect(opt.id)}
+                            className={`w-5 h-5 rounded-full border-2 flex-shrink-0 transition-all ${opt.isCorrect ? 'bg-green-500 border-green-500' : 'border-slate-300 hover:border-green-400'}`}>
+                            {opt.isCorrect && <Check size={10} className="text-white m-auto"/>}
+                          </button>
+                        )}
+                        <input value={opt.text} onChange={e => updateOption(opt.id, 'text', e.target.value)}
+                          placeholder={`Option ${idx + 1}`}
+                          className="flex-1 px-3 py-2 border border-cream-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-200 bg-white"/>
+                        {type === 'quiz' && (
+                          <input type="number" min={0} placeholder="pts" value={opt.points ?? ''}
+                            onChange={e => updateOption(opt.id, 'points', Number(e.target.value))}
+                            className="w-16 px-2 py-2 border border-cream-300 rounded-lg text-sm focus:outline-none bg-white text-center"/>
+                        )}
+                        {options.length > 2 && (
+                          <button onClick={() => removeOption(opt.id)} className="p-1.5 hover:bg-red-100 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
+                            <Trash2 size={13}/>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={addOption} className="mt-2 flex items-center gap-1.5 text-sm text-terracotta-600 hover:text-terracotta-700 font-medium">
+                    <Plus size={15}/> Add option
+                  </button>
+                </div>
+              )}
+
+              {/* Matrix builder */}
+              {type === 'matrix' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700 mb-2 block">Rows (statements)</label>
+                    <div className="space-y-1.5">
+                      {matrixRows.map((r, i) => (
+                        <input key={r.id} value={r.text} onChange={e => setMatrixRows(prev => prev.map(x => x.id === r.id ? {...x, text:e.target.value} : x))}
+                          placeholder={`Row ${i+1}`} className="w-full px-3 py-2 border border-cream-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-200 bg-white"/>
+                      ))}
+                      <button onClick={() => setMatrixRows(prev => [...prev, {id:Date.now().toString(), text:''}])}
+                        className="text-xs text-terracotta-600 font-medium flex items-center gap-1"><Plus size={12}/>Add row</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700 mb-2 block">Columns (options)</label>
+                    <div className="space-y-1.5">
+                      {matrixCols.map((c, i) => (
+                        <input key={c.id} value={c.text} onChange={e => setMatrixCols(prev => prev.map(x => x.id === c.id ? {...x, text:e.target.value} : x))}
+                          placeholder={`Col ${i+1}`} className="w-full px-3 py-2 border border-cream-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-200 bg-white"/>
+                      ))}
+                      <button onClick={() => setMatrixCols(prev => [...prev, {id:Date.now().toString(), text:''}])}
+                        className="text-xs text-terracotta-600 font-medium flex items-center gap-1"><Plus size={12}/>Add column</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Slider / NPS type hints */}
+              {type === 'slider' && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div><label className="text-xs font-medium text-slate-600 mb-1 block">Min value</label><input type="number" placeholder="0" className="w-full px-3 py-2 border border-cream-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-200"/></div>
+                  <div><label className="text-xs font-medium text-slate-600 mb-1 block">Max value</label><input type="number" placeholder="100" className="w-full px-3 py-2 border border-cream-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-200"/></div>
+                  <div><label className="text-xs font-medium text-slate-600 mb-1 block">Step</label><input type="number" placeholder="1" className="w-full px-3 py-2 border border-cream-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-200"/></div>
+                </div>
+              )}
+              {type === 'fill_blank' && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                  💡 In the title, use <strong>___</strong> (three underscores) to mark the blank. E.g. "The capital of France is ___"
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* STEP 2: Settings */}
+          {step === 2 && (
+            <motion.div key="step2" initial={{ opacity:0, x:20 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0, x:-20 }} className="space-y-5">
+              <h2 className="font-display font-semibold text-slate-800 mb-4">Poll settings</h2>
+
+              {/* Timing */}
+              <div className="p-4 bg-cream-100 rounded-xl">
+                <h3 className="text-sm font-semibold text-slate-700 mb-3">⏱ Timing</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 mb-1 block">Time limit (seconds)</label>
+                    <input type="number" min={0} value={settings.timeLimit ?? ''} onChange={e => setSettings(s => ({...s, timeLimit: Number(e.target.value) || undefined}))}
+                      placeholder="No limit" className="w-full px-3 py-2 border border-cream-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-200"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 mb-1 block">Passing score (%)</label>
+                    <input type="number" min={0} max={100} value={settings.passingScore ?? ''} onChange={e => setSettings(s => ({...s, passingScore: Number(e.target.value) || undefined}))}
+                      placeholder="e.g. 60" className="w-full px-3 py-2 border border-cream-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-200"/>
+                  </div>
+                </div>
+              </div>
+
+              {/* Toggles */}
+              <div className="space-y-3">
+                {[
+                  { key: 'allowAnonymous' as const,    label: 'Allow anonymous responses',     desc: 'Participants can respond without logging in' },
+                  { key: 'oneResponsePerUser' as const, label: 'One response per user',         desc: 'Prevent duplicate submissions from same account' },
+                  { key: 'showResultsLive' as const,   label: 'Show live results',             desc: 'Participants see results as votes come in' },
+                  { key: 'showCorrectAnswers' as const, label: 'Show correct answers',          desc: 'Display correct answers after submission (quiz)' },
+                  { key: 'showKeySheetAfter' as const,  label: 'Release key sheet to students', desc: 'Students get detailed answer breakdown after results released' },
+                  { key: 'shuffleOptions' as const,    label: 'Shuffle options',               desc: 'Randomise option order for each participant' },
+                  { key: 'preventTabSwitch' as const,  label: 'Detect tab switching',          desc: 'Warn when participant switches browser tab (quiz)' },
+                  { key: 'showProgressBar' as const,   label: 'Show progress bar',             desc: 'Display progress through multi-question polls' },
+                  { key: 'allowReview' as const,       label: 'Allow answer review',           desc: 'Let participants review before final submission' },
+                ].map(({ key, label, desc }) => (
+                  <div key={key} className="flex items-center justify-between gap-3 py-2.5 border-b border-cream-200 last:border-0">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">{label}</p>
+                      <p className="text-xs text-slate-400">{desc}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSettings(s => ({...s, [key]: !s[key]}))}
+                      className={`relative w-10 h-5 rounded-full transition-colors ${settings[key] ? 'bg-terracotta-500' : 'bg-slate-300'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${settings[key] ? 'translate-x-5' : ''}`}/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* STEP 3: Preview */}
+          {step === 3 && (
+            <motion.div key="step3" initial={{ opacity:0, x:20 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0, x:-20 }}>
+              <h2 className="font-display font-semibold text-slate-800 mb-5">Preview & publish</h2>
+              <div className="space-y-4">
+                <div className="p-4 bg-cream-100 rounded-xl">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-2xl">{pollTypeIcon(type)}</span>
+                    <span className="text-xs bg-terracotta-100 text-terracotta-700 px-2 py-0.5 rounded-full font-medium">{pollTypeLabel(type)}</span>
+                  </div>
+                  <h3 className="font-display font-semibold text-slate-800 text-lg">{title || 'Untitled Poll'}</h3>
+                  {desc && <p className="text-sm text-slate-500 mt-1">{desc}</p>}
+                </div>
+                {options.filter(o => o.text).length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Options</p>
+                    <div className="space-y-1.5">
+                      {options.filter(o => o.text).map(opt => (
+                        <div key={opt.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${opt.isCorrect ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-white border border-cream-300 text-slate-700'}`}>
+                          {opt.isCorrect && <Check size={13} className="text-green-600"/>}
+                          {opt.text}
+                          {opt.points !== undefined && opt.points > 0 && <span className="ml-auto text-xs text-slate-400">{opt.points}pts</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {[
+                    ['Anonymous', settings.allowAnonymous ? '✅ Allowed' : '❌ Disabled'],
+                    ['Time limit', settings.timeLimit ? `${settings.timeLimit}s` : 'No limit'],
+                    ['Live results', settings.showResultsLive ? '✅ On' : '❌ Off'],
+                    ['Key sheet', settings.showKeySheetAfter ? '✅ On' : '❌ Off'],
+                  ].map(([k,v]) => (
+                    <div key={k} className="flex justify-between p-2 bg-cream-100 rounded-lg">
+                      <span className="text-slate-500">{k}</span>
+                      <span className="font-medium text-slate-700">{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
 
-        <div className="flex items-center justify-between">
-          <Button variant="outline" onClick={()=>setStep(s=>Math.max(0,s-1))} disabled={step===0} className="gap-2">
-            <ChevronLeft className="w-4 h-4"/>Back
-          </Button>
-          {step < STEPS.length-1 ? (
-            <Button onClick={()=>setStep(s=>s+1)} disabled={step===1 && !question.trim()} className="gap-2">
-              Next<ChevronRight className="w-4 h-4"/>
-            </Button>
+        {/* Navigation */}
+        <div className="flex items-center justify-between mt-8 pt-5 border-t border-cream-200">
+          <button onClick={() => setStep(s => s - 1)} disabled={step === 0}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-cream-300 text-sm font-medium text-slate-600 hover:bg-cream-100 disabled:opacity-40 transition-all">
+            <ChevronLeft size={16}/> Back
+          </button>
+
+          {step < STEPS.length - 1 ? (
+            <button onClick={() => { if (step === 1 && !title.trim()) { toast.error('Add a title'); return; } setStep(s => s+1); }}
+              className="flex items-center gap-1.5 px-5 py-2 bg-terracotta-500 hover:bg-terracotta-600 text-white rounded-xl text-sm font-semibold transition-all shadow-sm">
+              Continue <ChevronRight size={16}/>
+            </button>
           ) : (
-            <Button onClick={handleCreate} disabled={saving} className="gap-2">
-              <Sparkles className="w-4 h-4"/>{saving?'Creating…':'Create Poll'}
-            </Button>
+            <button onClick={handleSubmit} disabled={loading}
+              className="flex items-center gap-2 px-5 py-2 bg-terracotta-500 hover:bg-terracotta-600 disabled:opacity-60 text-white rounded-xl text-sm font-semibold transition-all shadow-sm">
+              {loading ? <><Loader2 size={15} className="animate-spin"/> Publishing…</> : <><Check size={15}/> Publish Poll</>}
+            </button>
           )}
         </div>
       </div>
-    </DashboardLayout>
+    </div>
   );
 }

@@ -1,84 +1,107 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, CheckCircle, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useApp } from '@/context/AppContext';
-import { signUp } from '@/lib/api';
+import { BarChart3, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { authApi } from '@/lib/api';
+import { useApp } from '@/context/AppContext';
+import type { User } from '@/lib/types';
 
 export default function Signup() {
-  const navigate = useNavigate();
-  const { signIn } = useApp();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const { login } = useApp();
+  const navigate   = useNavigate();
+
+  const [name,     setName]     = useState('');
+  const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
-  const [showPw, setShowPw] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [role,     setRole]     = useState<'teacher'|'student'>('teacher');
+  const [showPw,   setShowPw]   = useState(false);
+  const [loading,  setLoading]  = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !password) { toast.error('Fill in all fields'); return; }
+    if (!name || !email || !password) { toast.error('Please fill in all fields'); return; }
     if (password.length < 6) { toast.error('Password must be at least 6 characters'); return; }
     setLoading(true);
     try {
-      const data = await signUp({ name, email, password }) as { user: { id:string;name:string;email:string;plan:string }; token:string };
-      signIn(data.user, data.token);
-      toast.success(`Welcome to OmniPoll, ${data.user.name}! 🎉`);
-      navigate('/dashboard');
-    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Signup failed'); }
-    finally { setLoading(false); }
+      const res = await authApi.signup({ name, email, password, role }) as { token: string; user: User };
+      login(res.token, res.user);
+      toast.success(`Welcome to OmniPoll, ${res.user.name}!`);
+      navigate(role === 'student' ? '/student/dashboard' : '/dashboard');
+    } catch (err: unknown) {
+      toast.error((err as Error).message ?? 'Signup failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const FEATURES = ['20 poll types','Real-time results','Neon database','Free to deploy'];
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'hsl(42,33%,93%)' }}>
-      <div className="h-14 flex items-center px-6">
-        <Link to="/" className="flex items-center gap-2 font-playfair text-xl font-bold">
-          <span className="w-7 h-7 rounded-lg bg-terracotta flex items-center justify-center"><Sparkles className="w-3.5 h-3.5 text-white" /></span>
-          <span className="text-terracotta">Omni</span>Poll
-        </Link>
-      </div>
-      <div className="flex-1 flex items-center justify-center p-4">
-        <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} className="w-full max-w-sm">
-          <div className="bg-warm-white dark:bg-card border border-clay/30 rounded-2xl shadow-xl p-8">
-            <h1 className="font-playfair text-2xl font-bold mb-1">Create your account</h1>
-            <p className="text-sm text-muted-foreground mb-4">Free forever. No credit card needed.</p>
-            <div className="grid grid-cols-2 gap-2 mb-5">
-              {FEATURES.map(f => (
-                <div key={f} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <CheckCircle className="w-3.5 h-3.5 text-terracotta flex-shrink-0" />{f}
-                </div>
-              ))}
+    <div className="min-h-screen bg-cream-100 flex items-center justify-center px-4">
+      <motion.div
+        initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }}
+        className="w-full max-w-md"
+      >
+        <div className="text-center mb-8">
+          <Link to="/" className="inline-flex items-center gap-2">
+            <div className="w-10 h-10 bg-terracotta-500 rounded-xl flex items-center justify-center shadow-md">
+              <BarChart3 size={20} className="text-white" />
             </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label>Full name</Label>
-                <Input placeholder="Your name" value={name} onChange={e => setName(e.target.value)} autoFocus />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Email</Label>
-                <Input type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Password</Label>
-                <div className="relative">
-                  <Input type={showPw ? 'text' : 'password'} placeholder="At least 6 characters" value={password} onChange={e => setPassword(e.target.value)} />
-                  <button type="button" onClick={() => setShowPw(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-              <Button type="submit" disabled={loading} className="w-full mt-2">{loading ? 'Creating…' : 'Create Free Account'}</Button>
-            </form>
-            <p className="text-center text-sm text-muted-foreground mt-4">
-              Already have an account? <Link to="/login" className="text-terracotta hover:underline font-medium">Sign in</Link>
-            </p>
+            <span className="font-display font-bold text-2xl text-slate-800">OmniPoll</span>
+          </Link>
+          <p className="text-slate-500 mt-2 text-sm">Create your free account</p>
+        </div>
+
+        <div className="op-card p-8">
+          {/* Role selector */}
+          <div className="grid grid-cols-2 gap-2 mb-5 p-1 bg-cream-200 rounded-xl">
+            {(['teacher','student'] as const).map(r => (
+              <button
+                key={r} type="button" onClick={() => setRole(r)}
+                className={`py-2 rounded-lg text-sm font-semibold capitalize transition-all ${role === r ? 'bg-white shadow-sm text-terracotta-700' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                {r === 'teacher' ? '🎓 Teacher' : '📚 Student'}
+              </button>
+            ))}
           </div>
-        </motion.div>
-      </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Full name</label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Your name"
+                className="w-full px-3.5 py-2.5 border border-cream-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-300 focus:border-terracotta-400 bg-white transition-all"/>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Email address</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com"
+                className="w-full px-3.5 py-2.5 border border-cream-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-300 focus:border-terracotta-400 bg-white transition-all"/>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+              <div className="relative">
+                <input
+                  type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Min. 6 characters"
+                  className="w-full px-3.5 py-2.5 pr-10 border border-cream-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-300 focus:border-terracotta-400 bg-white transition-all"
+                />
+                <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  {showPw ? <EyeOff size={16}/> : <Eye size={16}/>}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit" disabled={loading}
+              className="w-full flex items-center justify-center gap-2 bg-terracotta-500 hover:bg-terracotta-600 disabled:opacity-60 text-white py-2.5 rounded-lg font-semibold transition-all shadow-sm mt-2"
+            >
+              {loading ? <><Loader2 size={16} className="animate-spin"/> Creating account…</> : 'Create Account'}
+            </button>
+          </form>
+
+          <p className="text-center text-sm text-slate-500 mt-5">
+            Already have an account?{' '}
+            <Link to="/login" className="text-terracotta-600 hover:text-terracotta-700 font-medium">Sign in</Link>
+          </p>
+        </div>
+      </motion.div>
     </div>
   );
 }

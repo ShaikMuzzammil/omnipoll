@@ -1,108 +1,177 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { User, Shield, LogOut, Trash2, Save, Bell } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Separator } from '@/components/ui/separator';
-import DashboardLayout from '@/components/DashboardLayout';
-import { useApp } from '@/context/AppContext';
+import { User, Bell, Shield, Loader2, Check, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
+import { authApi } from '@/lib/api';
+import { useApp } from '@/context/AppContext';
 
 export default function Settings() {
-  const navigate = useNavigate();
-  const { user, loading: authLoading, signOut, updateUser } = useApp();
-  const [name, setName] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [notifs, setNotifs] = useState(true);
+  const { user, refreshUser, logout } = useApp();
+  const [tab, setTab] = useState<'profile'|'notifications'|'security'>('profile');
 
-  useEffect(() => {
-    if (!authLoading && !user) { navigate('/login'); return; }
-    if (user) setName(user.name || '');
-  }, [user, authLoading, navigate]);
+  const [name,    setName]    = useState(user?.name ?? '');
+  const [inst,    setInst]    = useState(user?.institution ?? '');
+  const [curPw,   setCurPw]   = useState('');
+  const [newPw,   setNewPw]   = useState('');
+  const [showPw,  setShowPw]  = useState(false);
 
-  const save = () => {
-    if (!name.trim()) { toast.error('Name required'); return; }
-    setSaving(true);
-    setTimeout(() => { updateUser({ name: name.trim() }); toast.success('Profile updated'); setSaving(false); }, 600);
-  };
+  const [notifs, setNotifs] = useState({
+    resultReleased: true, pollStarted: true, pollClosed: false,
+    classroomInvite: true, quizGraded: true, weeklyDigest: false,
+  });
 
-  const PLANS = {
-    free:    ['5 polls/month','Multiple choice, Q&A, Quiz, Rating, Word cloud','100 participants'],
-    starter: ['Unlimited polls','All free types + 7 more','500 participants'],
-    pro:     ['Unlimited everything','All 20 poll types','Unlimited participants','Advanced analytics','CSV export'],
-  };
+  const profileMut = useMutation({
+    mutationFn: () => authApi.update({ name, institution: inst }),
+    onSuccess: () => { refreshUser(); toast.success('Profile updated!'); },
+    onError: (e:Error) => toast.error(e.message),
+  });
 
-  if (authLoading) return <DashboardLayout title="Settings"><div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-terracotta border-t-transparent rounded-full animate-spin"/></div></DashboardLayout>;
+  const pwMut = useMutation({
+    mutationFn: () => authApi.update({ currentPassword: curPw, newPassword: newPw }),
+    onSuccess: () => { toast.success('Password changed!'); setCurPw(''); setNewPw(''); },
+    onError: (e:Error) => toast.error(e.message),
+  });
+
+  const initials = user?.name?.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() ?? 'OP';
 
   return (
-    <DashboardLayout title="Settings">
-      <div className="p-6 max-w-2xl mx-auto space-y-6">
-        {/* Profile */}
-        <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-border flex items-center gap-2"><User className="w-4 h-4 text-muted-foreground"/><h2 className="font-playfair font-semibold text-foreground">Profile</h2></div>
-          <div className="p-5 space-y-4">
-            <div className="flex items-center gap-4 mb-5">
-              <div className="w-14 h-14 rounded-full bg-terracotta/20 flex items-center justify-center text-terracotta font-bold text-xl">{user?.name?.[0]?.toUpperCase()||'U'}</div>
-              <div><p className="font-semibold text-foreground">{user?.name}</p><p className="text-sm text-muted-foreground">{user?.email}</p>
-                <span className="text-xs bg-terracotta/10 text-terracotta px-2 py-0.5 rounded-full mt-1 inline-block capitalize">{user?.plan||'free'} plan</span></div>
-            </div>
-            <div className="space-y-1.5"><Label>Display name</Label><Input value={name} onChange={e=>setName(e.target.value)}/></div>
-            <div className="space-y-1.5"><Label>Email</Label><Input value={user?.email||''} disabled className="bg-muted cursor-not-allowed"/><p className="text-xs text-muted-foreground">Email cannot be changed</p></div>
-            <Button onClick={save} disabled={saving} size="sm" className="gap-1.5"><Save className="w-3.5 h-3.5"/>{saving?'Saving…':'Save changes'}</Button>
-          </div>
-        </motion.div>
+    <div className="max-w-2xl mx-auto space-y-6 page-enter">
+      <h1 className="font-display text-2xl font-bold text-slate-800">Settings</h1>
 
-        {/* Plan */}
-        <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{delay:0.1}} className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-border flex items-center gap-2"><Shield className="w-4 h-4 text-muted-foreground"/><h2 className="font-playfair font-semibold text-foreground">Plan & Billing</h2></div>
-          <div className="p-5">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {(['free','starter','pro'] as const).map(plan=>(
-                <div key={plan} className={`p-4 rounded-xl border-2 ${user?.plan===plan?'border-terracotta bg-terracotta/5':'border-border'}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="font-semibold capitalize text-foreground">{plan}</span>
-                    {user?.plan===plan&&<span className="text-xs bg-terracotta text-white px-2 py-0.5 rounded-full">Current</span>}
-                  </div>
-                  <ul className="space-y-1.5">
-                    {PLANS[plan].map(f=><li key={f} className="text-xs text-muted-foreground flex items-start gap-1.5"><span className="text-terracotta mt-0.5">✓</span>{f}</li>)}
-                  </ul>
-                  {user?.plan!==plan&&<Button variant="outline" size="sm" className="w-full mt-3 text-xs" onClick={()=>toast.info('Billing coming soon!')}>Upgrade</Button>}
-                </div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Preferences */}
-        <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{delay:0.15}} className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-border flex items-center gap-2"><Bell className="w-4 h-4 text-muted-foreground"/><h2 className="font-playfair font-semibold text-foreground">Preferences</h2></div>
-          <div className="p-5">
-            <div className="flex items-center justify-between">
-              <div><p className="text-sm font-medium">Email notifications</p><p className="text-xs text-muted-foreground">Receive summaries when polls close</p></div>
-              <Switch checked={notifs} onCheckedChange={setNotifs}/>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Danger */}
-        <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{delay:0.2}} className="bg-card border border-destructive/30 rounded-2xl shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-destructive/20 flex items-center gap-2"><Trash2 className="w-4 h-4 text-destructive"/><h2 className="font-playfair font-semibold text-destructive">Danger zone</h2></div>
-          <div className="p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div><p className="text-sm font-medium">Sign out</p><p className="text-xs text-muted-foreground">Log out on this device</p></div>
-              <Button variant="outline" size="sm" onClick={()=>{signOut();navigate('/');}} className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"><LogOut className="w-3.5 h-3.5"/>Logout</Button>
-            </div>
-            <Separator/>
-            <div className="flex items-center justify-between">
-              <div><p className="text-sm font-medium">Delete account</p><p className="text-xs text-muted-foreground">Permanently remove all data</p></div>
-              <Button variant="destructive" size="sm" onClick={()=>toast.error('Contact support to delete your account')}>Delete</Button>
-            </div>
-          </div>
-        </motion.div>
+      {/* Tabs */}
+      <div className="flex gap-1 bg-cream-200 p-1 rounded-xl">
+        {[
+          { id:'profile' as const,       label:'👤 Profile',       icon: User },
+          { id:'notifications' as const, label:'🔔 Notifications', icon: Bell },
+          { id:'security' as const,      label:'🔒 Security',      icon: Shield },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === t.id ? 'bg-white shadow-sm text-terracotta-700' : 'text-slate-500 hover:text-slate-700'}`}>
+            {t.label}
+          </button>
+        ))}
       </div>
-    </DashboardLayout>
+
+      {tab === 'profile' && (
+        <motion.div key="profile" initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} className="op-card p-6 space-y-5">
+          {/* Avatar */}
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 bg-terracotta-500 rounded-2xl flex items-center justify-center text-white text-2xl font-bold font-display">
+              {initials}
+            </div>
+            <div>
+              <p className="font-display font-semibold text-slate-800 text-lg">{user?.name}</p>
+              <p className="text-sm text-slate-500">{user?.email}</p>
+              <span className="inline-block mt-1 text-xs bg-terracotta-100 text-terracotta-700 px-2 py-0.5 rounded-full font-medium capitalize">{user?.role}</span>
+            </div>
+          </div>
+
+          <div className="border-t border-cream-200 pt-5 space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Full Name</label>
+              <input value={name} onChange={e => setName(e.target.value)}
+                className="w-full px-3.5 py-2.5 border border-cream-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-200"/>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Email <span className="text-slate-400 font-normal">(read-only)</span></label>
+              <input value={user?.email ?? ''} readOnly
+                className="w-full px-3.5 py-2.5 border border-cream-200 rounded-xl text-sm bg-cream-100 text-slate-500 cursor-not-allowed"/>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Institution / School</label>
+              <input value={inst} onChange={e => setInst(e.target.value)} placeholder="e.g. MIT, Acme Corp"
+                className="w-full px-3.5 py-2.5 border border-cream-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-200"/>
+            </div>
+            <button onClick={() => profileMut.mutate()} disabled={profileMut.isPending}
+              className="flex items-center gap-2 bg-terracotta-500 hover:bg-terracotta-600 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm">
+              {profileMut.isPending ? <Loader2 size={14} className="animate-spin"/> : <Check size={14}/>} Save Changes
+            </button>
+          </div>
+
+          <div className="border-t border-cream-200 pt-5">
+            <p className="text-sm font-semibold text-slate-700 mb-3">Danger Zone</p>
+            <button onClick={logout} className="text-sm text-red-600 hover:text-red-700 font-medium border border-red-200 hover:border-red-400 px-4 py-2 rounded-xl transition-colors">
+              Sign Out of All Devices
+            </button>
+          </div>
+        </motion.div>
+      )}
+
+      {tab === 'notifications' && (
+        <motion.div key="notifs" initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} className="op-card p-6">
+          <h3 className="font-display font-semibold text-slate-800 mb-5">Notification Preferences</h3>
+          <div className="space-y-4">
+            {[
+              { key:'resultReleased' as const, label:'Results released',    desc:'When your teacher releases quiz results and key sheets' },
+              { key:'pollStarted' as const,    label:'Poll started',        desc:'When a new poll or quiz goes live in your classroom' },
+              { key:'pollClosed' as const,     label:'Poll closed',         desc:'When a poll you participated in closes' },
+              { key:'classroomInvite' as const,label:'Classroom invites',   desc:'When you\'re added to a new classroom' },
+              { key:'quizGraded' as const,     label:'Quiz graded',         desc:'When your quiz attempt is graded' },
+              { key:'weeklyDigest' as const,   label:'Weekly digest',       desc:'Weekly summary of your activity' },
+            ].map(n => (
+              <div key={n.key} className="flex items-center justify-between py-2.5 border-b border-cream-100 last:border-0">
+                <div>
+                  <p className="text-sm font-medium text-slate-700">{n.label}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{n.desc}</p>
+                </div>
+                <button onClick={() => setNotifs(p => ({...p, [n.key]: !p[n.key]}))}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${notifs[n.key] ? 'bg-terracotta-500' : 'bg-slate-300'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${notifs[n.key] ? 'translate-x-5' : ''}`}/>
+                </button>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => toast.success('Notification preferences saved!')}
+            className="mt-5 flex items-center gap-2 bg-terracotta-500 hover:bg-terracotta-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm">
+            <Check size={14}/> Save Preferences
+          </button>
+        </motion.div>
+      )}
+
+      {tab === 'security' && (
+        <motion.div key="security" initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} className="op-card p-6 space-y-5">
+          <h3 className="font-display font-semibold text-slate-800">Change Password</h3>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Current Password</label>
+              <div className="relative">
+                <input type={showPw ? 'text' : 'password'} value={curPw} onChange={e => setCurPw(e.target.value)}
+                  placeholder="Current password"
+                  className="w-full px-3.5 py-2.5 pr-10 border border-cream-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-200"/>
+                <button type="button" onClick={() => setShowPw(v=>!v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  {showPw ? <EyeOff size={15}/> : <Eye size={15}/>}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">New Password</label>
+              <input type={showPw ? 'text' : 'password'} value={newPw} onChange={e => setNewPw(e.target.value)}
+                placeholder="Min. 6 characters"
+                className="w-full px-3.5 py-2.5 border border-cream-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-200"/>
+            </div>
+            <button onClick={() => { if(newPw.length < 6){toast.error('Min 6 chars'); return;} pwMut.mutate(); }}
+              disabled={!curPw || !newPw || pwMut.isPending}
+              className="flex items-center gap-2 bg-terracotta-500 hover:bg-terracotta-600 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm">
+              {pwMut.isPending ? <Loader2 size={14} className="animate-spin"/> : <Shield size={14}/>} Update Password
+            </button>
+          </div>
+
+          <div className="border-t border-cream-200 pt-5">
+            <h3 className="font-display font-semibold text-slate-800 mb-3">Session Info</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between py-2 border-b border-cream-100">
+                <span className="text-slate-500">Account type</span>
+                <span className="font-medium text-slate-700 capitalize">{user?.role}</span>
+              </div>
+              <div className="flex justify-between py-2">
+                <span className="text-slate-500">Member since</span>
+                <span className="font-medium text-slate-700">{user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-IN',{month:'long',year:'numeric'}) : '—'}</span>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </div>
   );
 }

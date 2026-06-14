@@ -1,428 +1,333 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, Square, Copy, RefreshCw, Maximize2, Users } from 'lucide-react';
-import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Button } from '@/components/ui/button';
-import { getPoll, updatePollStatus, getResults } from '@/lib/api';
-import { usePusher } from '@/hooks/usePusher';
-import { POLL_TYPE_META, CHART_COLORS, EMOJIS } from '@/lib/types';
-import { toast } from 'sonner';
-import type { Poll, PollResults, QAQuestion } from '@/lib/types';
+import {
+  Users, QrCode, X, Maximize2, Wifi,
+  BarChart3, Trophy, Clock,
+} from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  RadarChart, PolarGrid, PolarAngleAxis, Radar,
+} from 'recharts';
+import { pollsApi } from '@/lib/api';
+import { usePollChannel } from '@/hooks/usePusher';
+import { pollTypeLabel, pollTypeIcon } from '@/lib/utils';
+import type { Poll } from '@/lib/types';
+
+const COLORS = ['#D96C4A','#7A8C6E','#E4CC94','#A6472C','#5A6A4E','#EEDBB0','#C55A38','#83372  3'];
+
+interface Results {
+  optionStats?: { id:string; text:string; count:number; percentage:number }[];
+  words?: { text:string; count:number }[];
+  questions?: { text:string; author:string; upvotes:number; answered:boolean }[];
+  leaderboard?: { name:string; score:number; rank:number; timeTaken:number }[];
+  average?: number;
+  distribution?: Record<string,number>;
+}
 
 export default function Present() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [poll, setPoll] = useState<Poll | null>(null);
-  const [results, setResults] = useState<PollResults | null>(null);
-  const [participants, setParticipants] = useState(0);
-  const [qaList, setQaList] = useState<QAQuestion[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { pollId } = useParams<{ pollId:string }>();
+  const qc = useQueryClient();
+  const [showQr, setShowQr] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [liveCount, setLiveCount] = useState(0);
 
-  const fetchData = useCallback(async () => {
-    if (!id) return;
-    try {
-      const [pd, rd] = await Promise.all([
-        getPoll(id) as Promise<{ poll: Poll }>,
-        getResults(id) as Promise<{ results: PollResults }>,
-      ]);
-      setPoll(pd.poll);
-      setResults(rd.results);
-      setParticipants(pd.poll.participants?.length || 0);
-      setQaList(pd.poll.qaQuestions || []);
-    } catch { toast.error('Failed to load poll'); }
-    finally { setLoading(false); }
-  }, [id]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  usePusher(poll?.id || null, {
-    'results-update': d => setResults(d as PollResults),
-    'status-changed': d => { if (d && typeof d === 'object' && 'status' in d) setPoll(p => p ? { ...p, status: (d as { status: Poll['status'] }).status } : p); },
-    'participant-joined': d => { if (d && typeof d === 'object' && 'count' in d) setParticipants((d as { count: number }).count); },
-    'qa-update': d => { if (d && typeof d === 'object' && 'questions' in d) setQaList((d as { questions: QAQuestion[] }).questions); },
+  const { data: poll } = useQuery<Poll>({
+    queryKey: ['poll', pollId],
+    queryFn: () => pollsApi.get(pollId!) as Promise<Poll>,
   });
 
-  const setStatus = async (status: string) => {
-    if (!poll) return;
-    try {
-      await updatePollStatus(poll.id, status);
-      setPoll(p => p ? { ...p, status: status as Poll['status'] } : p);
-      toast.success(`Poll ${status}`);
-    } catch { toast.error('Failed'); }
+  const { data: results } = useQuery<Results>({
+    queryKey: ['poll-results', pollId],
+    queryFn: () => pollsApi.results(pollId!) as Promise<Results>,
+    refetchInterval: 3000,
+    enabled: !!pollId,
+  });
+
+  usePollChannel(pollId, {
+    'new-vote':    () => qc.invalidateQueries({ queryKey: ['poll-results', pollId] }),
+    'new-attempt': () => { qc.invalidateQueries({ queryKey: ['poll-results', pollId] }); setLiveCount(c => c+1); },
+    'participant-count': (data: unknown) => setLiveCount((data as {count:number}).count),
+  });
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+      setFullscreen(true);
+    } else {
+      document.exitFullscreen();
+      setFullscreen(false);
+    }
   };
 
-  const copyLink = () => {
-    if (!poll) return;
-    navigator.clipboard.writeText(`${window.location.origin}/participate/${poll.code}`);
-    toast.success('Join link copied!');
-  };
+  if (!poll) return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-terracotta-500 border-t-transparent rounded-full animate-spin"/>
+    </div>
+  );
 
-  if (loading) return <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center"><div className="w-8 h-8 border-2 border-terracotta border-t-transparent rounded-full animate-spin" /></div>;
-  if (!poll) return <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-white">Poll not found</div>;
-
-  const meta = POLL_TYPE_META[poll.type] || POLL_TYPE_META.multiple_choice;
-  const joinUrl = `${window.location.origin}/participate/${poll.code}`;
+  const joinUrl = `${window.location.origin}/join/${poll.code}`;
+  const optionStats = results?.optionStats ?? [];
+  const words = results?.words ?? [];
+  const leaderboard = results?.leaderboard ?? [];
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col">
+    <div className={`min-h-screen bg-slate-900 text-white flex flex-col ${fullscreen ? 'fixed inset-0 z-50' : ''}`}>
       {/* Top bar */}
-      <header className="flex items-center justify-between px-6 py-3 border-b border-white/10 bg-[#0d0d0d] flex-shrink-0">
+      <div className="flex items-center justify-between px-6 py-3 bg-slate-800/80 backdrop-blur border-b border-slate-700">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/dashboard')} className="text-white/50 hover:text-white transition-colors text-sm">← Back</button>
-          <span className="text-white/20">|</span>
-          <span className="text-2xl">{meta.icon}</span>
+          <div className="w-8 h-8 bg-terracotta-500 rounded-lg flex items-center justify-center">
+            <BarChart3 size={16}/>
+          </div>
           <div>
-            <h1 className="font-playfair font-bold text-white leading-tight">{poll.title}</h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className={`w-2 h-2 rounded-full ${poll.status === 'live' ? 'bg-green-400 animate-pulse' : poll.status === 'paused' ? 'bg-yellow-400' : 'bg-gray-500'}`} />
-              <span className="text-white/50 text-xs capitalize">{poll.status}</span>
-              <span className="text-white/30 text-xs">· {meta.label}</span>
-            </div>
+            <p className="text-xs text-slate-400">{pollTypeLabel(poll.type)}</p>
+            <p className="font-display font-semibold text-sm">{poll.title}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-white/5 rounded-lg px-3 py-2">
-            <Users className="w-4 h-4 text-white/50" />
-            <span className="text-white font-bold">{participants}</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 text-sm text-slate-300 bg-slate-700 px-3 py-1.5 rounded-lg">
+            <Users size={14} className="text-terracotta-400"/>
+            {poll.uniqueParticipants + liveCount}
+            <span className="text-slate-500 text-xs">participants</span>
           </div>
-          <button onClick={copyLink} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 rounded-lg px-3 py-2 transition-colors">
-            <span className="font-mono text-terracotta font-bold tracking-widest text-sm">{poll.code}</span>
-            <Copy className="w-3.5 h-3.5 text-white/40" />
+          <div className="flex items-center gap-1.5 text-sm text-green-400 bg-slate-700 px-3 py-1.5 rounded-lg">
+            <Wifi size={13}/>
+            <span>Live</span>
+          </div>
+          <button onClick={() => setShowQr(v => !v)} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition-colors">
+            <QrCode size={14}/> QR
           </button>
-          {poll.status === 'live' ? (
-            <Button size="sm" variant="outline" onClick={() => setStatus('paused')} className="bg-transparent border-white/20 text-white hover:bg-white/10 gap-1.5">
-              <Pause className="w-3.5 h-3.5" />Pause
-            </Button>
-          ) : poll.status === 'paused' ? (
-            <Button size="sm" onClick={() => setStatus('live')} className="gap-1.5 bg-green-600 hover:bg-green-700 border-0">
-              <Play className="w-3.5 h-3.5" />Resume
-            </Button>
-          ) : null}
-          {poll.status !== 'closed' && (
-            <Button size="sm" variant="outline" onClick={() => setStatus('closed')} className="bg-transparent border-white/20 text-white hover:bg-white/10 gap-1.5">
-              <Square className="w-3.5 h-3.5" />Close
-            </Button>
-          )}
-          <button onClick={fetchData} className="p-2 rounded-lg hover:bg-white/10 transition-colors"><RefreshCw className="w-4 h-4 text-white/50" /></button>
+          <button onClick={toggleFullscreen} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors">
+            <Maximize2 size={14}/>
+          </button>
+          <Link to={`/results/${pollId}`} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors">
+            <X size={14}/>
+          </Link>
         </div>
-      </header>
+      </div>
 
-      {/* Main */}
-      <main className="flex-1 flex overflow-hidden">
-        {/* Results */}
-        <div className="flex-1 p-8 overflow-y-auto">
-          <div className="text-center mb-8">
-            <p className="text-white/40 text-sm mb-2">{meta.label}</p>
-            <h2 className="font-playfair text-3xl font-bold text-white">{poll.question}</h2>
-            {poll.description && <p className="text-white/50 mt-2 text-sm">{poll.description}</p>}
-          </div>
+      {/* Join code hero */}
+      <div className="flex items-center justify-center gap-6 py-4 bg-slate-800/40 border-b border-slate-700/50">
+        <span className="text-slate-400 text-sm">Join at <span className="text-white font-medium">omnipoll.vercel.app/join</span></span>
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400 text-sm">Code:</span>
+          <span className="font-mono text-2xl font-black text-terracotta-400 tracking-[0.3em]">{poll.code}</span>
+        </div>
+      </div>
 
-          <AnimatePresence mode="wait">
-            <motion.div key={poll.type} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-              {!results || (results.totalVotes === 0 && poll.type !== 'qa') ? (
-                <WaitingScreen code={poll.code} joinUrl={joinUrl} />
-              ) : (
-                <ResultsView poll={poll} results={results} qaList={qaList} />
-              )}
+      {/* QR overlay */}
+      <AnimatePresence>
+        {showQr && (
+          <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center"
+            onClick={() => setShowQr(false)}>
+            <motion.div initial={{ scale:0.8 }} animate={{ scale:1 }} exit={{ scale:0.8 }}
+              className="bg-white p-8 rounded-2xl text-center" onClick={e => e.stopPropagation()}>
+              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(joinUrl)}`} alt="QR" className="w-56 h-56 mx-auto mb-4"/>
+              <p className="font-mono text-2xl font-black text-terracotta-600 tracking-widest">{poll.code}</p>
+              <p className="text-sm text-slate-500 mt-1">Scan to join</p>
+              <button onClick={() => setShowQr(false)} className="mt-4 px-4 py-2 bg-slate-100 rounded-lg text-sm text-slate-600">Close</button>
             </motion.div>
-          </AnimatePresence>
-        </div>
-
-        {/* Side panel */}
-        <aside className="w-56 border-l border-white/10 p-5 flex flex-col gap-5 flex-shrink-0">
-          <div className="bg-white/5 rounded-2xl p-4 text-center">
-            <p className="text-white/40 text-xs mb-2">Join at</p>
-            <p className="text-white/60 text-xs mb-3 break-all">{window.location.hostname}</p>
-            <img src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(joinUrl)}&size=120x120&format=png&bgcolor=ffffff&color=000000`}
-              alt="QR" className="rounded-xl mx-auto w-[120px] h-[120px]"
-              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            <div className="font-mono text-terracotta text-3xl font-black tracking-[0.3em] mt-3">{poll.code}</div>
-          </div>
-          <div className="space-y-3">
-            <div className="bg-white/5 rounded-xl p-3 text-center">
-              <div className="text-2xl font-bold text-white">{participants}</div>
-              <div className="text-white/40 text-xs">Participants</div>
-            </div>
-            <div className="bg-white/5 rounded-xl p-3 text-center">
-              <div className="text-2xl font-bold text-white">{results?.totalVotes ?? 0}</div>
-              <div className="text-white/40 text-xs">Responses</div>
-            </div>
-          </div>
-        </aside>
-      </main>
-    </div>
-  );
-}
-
-function WaitingScreen({ code, joinUrl }: { code: string; joinUrl: string }) {
-  return (
-    <div className="text-center py-16">
-      <div className="inline-flex items-center gap-2 mb-6">
-        <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse" />
-        <span className="text-white/50 text-sm">Waiting for participants…</span>
-      </div>
-      <div className="font-mono text-8xl font-black text-terracotta tracking-widest mb-4">{code}</div>
-      <p className="text-white/30 text-sm break-all">{joinUrl}</p>
-    </div>
-  );
-}
-
-function ResultsView({ poll, results, qaList }: { poll: Poll; results: PollResults; qaList: QAQuestion[] }) {
-  const type = poll.type;
-
-  if (['multiple_choice', 'image_choice', 'true_false', 'countdown_vote', 'poll_series', 'bracket'].includes(type) && results.options)
-    return <BarResults options={results.options} total={results.totalVotes || 0} />;
-  if (type === 'word_cloud' && results.words) return <WordCloud words={results.words} />;
-  if (type === 'open_text' || type === 'fill_blank') return <TextList answers={results.answers || results.submissions?.map(r => String(r.answer)) || []} />;
-  if (type === 'qa') return <QAView questions={qaList} />;
-  if (type === 'quiz') return <QuizLeaderboard leaderboard={results.leaderboard || []} />;
-  if (type === 'rating') return <RatingView average={results.average || 0} distribution={results.distribution || {}} />;
-  if (type === 'nps') return <NPSView score={results.npsScore || 0} detractors={results.detractors || 0} passives={results.passives || 0} promoters={results.promoters || 0} total={results.totalVotes || 0} />;
-  if (type === 'slider') return <RatingView average={results.average || 0} distribution={results.distribution || {}} label={`${poll.settings?.min ?? 0}–${poll.settings?.max ?? 100}`} />;
-  if (type === 'ranking') return <RankingView rankings={results.rankingResults || []} />;
-  if (type === 'matrix') return <MatrixView poll={poll} matrixResults={results.matrixResults || {}} />;
-  if (type === 'emoji_reaction') return <EmojiView counts={results.emojiCounts || {}} />;
-  if (type === 'prioritization') return <BarResults options={results.options || []} total={results.totalVotes || 0} label="avg pts" />;
-  if (type === 'heatmap') return <HeatmapView points={results.heatmapPoints || []} imageUrl={poll.settings?.imageUrl} />;
-  if (type === 'live_matching') return <MatchingView matchingResults={results.matchingResults || []} />;
-  return <div className="text-white/30 text-center py-8">No results yet.</div>;
-}
-
-function BarResults({ options, total, label = '' }: { options: { id: string; text: string; votes: number; pct: number }[]; total: number; label?: string }) {
-  return (
-    <div className="space-y-3 max-w-2xl mx-auto">
-      {options.map((opt, i) => (
-        <motion.div key={opt.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-white font-medium text-sm">{opt.text}</span>
-            <div className="flex items-center gap-2">
-              <span className="text-white/50 text-sm">{opt.votes}{label && ` ${label}`}</span>
-              <span className="text-white font-bold text-lg w-14 text-right">{opt.pct}%</span>
-            </div>
-          </div>
-          <div className="h-10 bg-white/5 rounded-xl overflow-hidden">
-            <motion.div initial={{ width: 0 }} animate={{ width: `${opt.pct}%` }} transition={{ duration: 0.7, delay: i * 0.05 }}
-              className="h-full rounded-xl" style={{ background: `linear-gradient(90deg, ${CHART_COLORS[i % CHART_COLORS.length]}cc, ${CHART_COLORS[i % CHART_COLORS.length]})` }} />
-          </div>
-        </motion.div>
-      ))}
-      <p className="text-white/30 text-sm text-right mt-2">{total} total responses</p>
-    </div>
-  );
-}
-
-function WordCloud({ words }: { words: { text: string; count: number }[] }) {
-  const max = Math.max(...words.map(w => w.count), 1);
-  return (
-    <div className="flex flex-wrap gap-3 justify-center items-center py-8 max-w-3xl mx-auto">
-      {words.slice(0, 50).map((w, i) => (
-        <motion.span key={w.text} initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.03 }}
-          className="font-bold cursor-default hover:scale-110 transition-transform"
-          style={{ fontSize: `${0.8 + (w.count / max) * 2.5}rem`, color: CHART_COLORS[i % CHART_COLORS.length] }}>
-          {w.text}
-        </motion.span>
-      ))}
-    </div>
-  );
-}
-
-function TextList({ answers }: { answers: string[] }) {
-  return (
-    <div className="max-w-2xl mx-auto space-y-2 max-h-[50vh] overflow-y-auto">
-      {answers.slice(0, 50).map((a, i) => (
-        <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-          className="bg-white/5 rounded-xl px-4 py-3 text-white/80 text-sm">{a}</motion.div>
-      ))}
-    </div>
-  );
-}
-
-function QAView({ questions }: { questions: QAQuestion[] }) {
-  const sorted = [...questions].sort((a, b) => b.upvotes - a.upvotes).slice(0, 10);
-  return (
-    <div className="max-w-2xl mx-auto space-y-3">
-      {sorted.map((q, i) => (
-        <motion.div key={q.id} layout initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-          className={`flex items-start gap-4 p-4 rounded-xl border ${q.status === 'highlighted' ? 'border-terracotta bg-terracotta/10' : 'border-white/10 bg-white/5'}`}>
-          <div className="text-center flex-shrink-0">
-            <div className="text-2xl font-black text-terracotta">{q.upvotes}</div>
-            <div className="text-white/30 text-xs">votes</div>
-          </div>
-          <p className="text-white font-medium text-sm flex-1">{q.questionText}</p>
-          {q.status === 'answered' && <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded-full">Answered</span>}
-        </motion.div>
-      ))}
-      {sorted.length === 0 && <p className="text-white/30 text-center py-8">No questions yet</p>}
-    </div>
-  );
-}
-
-function QuizLeaderboard({ leaderboard }: { leaderboard: { name: string; score: number; correct: number; answered: number }[] }) {
-  const medals = ['🥇', '🥈', '🥉'];
-  return (
-    <div className="max-w-xl mx-auto space-y-2">
-      {leaderboard.slice(0, 10).map((e, i) => (
-        <motion.div key={i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}
-          className={`flex items-center gap-4 p-4 rounded-xl ${i === 0 ? 'bg-yellow-500/10 border border-yellow-500/30' : 'bg-white/5 border border-white/10'}`}>
-          <span className="text-2xl">{medals[i] || `${i + 1}.`}</span>
-          <div className="flex-1"><div className="font-bold text-white">{e.name}</div><div className="text-white/40 text-xs">{e.correct}/{e.answered} correct</div></div>
-          <div className="text-2xl font-black text-terracotta">{e.score}<span className="text-white/30 text-xs ml-1">pts</span></div>
-        </motion.div>
-      ))}
-    </div>
-  );
-}
-
-function RatingView({ average, distribution, label = 'Average rating out of 10' }: { average: number; distribution: Record<string, number>; label?: string }) {
-  const data = Object.entries(distribution).sort((a, b) => Number(a[0]) - Number(b[0])).map(([k, v]) => ({ name: k, value: v }));
-  return (
-    <div className="max-w-2xl mx-auto">
-      <div className="text-center mb-8">
-        <div className="text-8xl font-black text-terracotta font-playfair">{average}</div>
-        <div className="text-white/40 text-sm mt-1">{label}</div>
-      </div>
-      <ResponsiveContainer width="100%" height={140}>
-        <BarChart data={data} barSize={24}>
-          <XAxis dataKey="name" stroke="#ffffff30" tick={{ fill: '#ffffff60', fontSize: 12 }} />
-          <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px', color: '#fff' }} />
-          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-            {data.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-function NPSView({ score, detractors, passives, promoters, total }: { score: number; detractors: number; passives: number; promoters: number; total: number }) {
-  const color = score >= 50 ? '#4ade80' : score >= 0 ? '#facc15' : '#f87171';
-  return (
-    <div className="max-w-xl mx-auto text-center">
-      <div className="mb-8"><div className="text-7xl font-black font-playfair" style={{ color }}>{score > 0 ? '+' : ''}{score}</div><div className="text-white/40 text-sm">Net Promoter Score</div></div>
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        {[{ label: 'Detractors', count: detractors, color: '#f87171' }, { label: 'Passives', count: passives, color: '#facc15' }, { label: 'Promoters', count: promoters, color: '#4ade80' }].map(({ label, count, color }) => (
-          <div key={label} className="bg-white/5 rounded-xl p-4">
-            <div className="text-2xl font-bold" style={{ color }}>{total ? Math.round((count / total) * 100) : 0}%</div>
-            <div className="text-white/40 text-xs mt-1">{label}</div>
-          </div>
-        ))}
-      </div>
-      <div className="h-4 rounded-full overflow-hidden flex">
-        <div className="bg-red-400 transition-all" style={{ width: `${total ? (detractors / total) * 100 : 0}%` }} />
-        <div className="bg-yellow-400 transition-all" style={{ width: `${total ? (passives / total) * 100 : 0}%` }} />
-        <div className="bg-green-400 transition-all" style={{ width: `${total ? (promoters / total) * 100 : 0}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function RankingView({ rankings }: { rankings: { text: string; points: number }[] }) {
-  return (
-    <div className="max-w-xl mx-auto space-y-3">
-      {rankings.map((r, i) => (
-        <motion.div key={r.text} initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}
-          className="flex items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/10">
-          <span className="text-3xl font-black text-terracotta/50">{i + 1}</span>
-          <span className="flex-1 font-medium text-white">{r.text}</span>
-          <div className="w-32 h-2 bg-white/10 rounded-full overflow-hidden">
-            <div className="h-full bg-terracotta rounded-full" style={{ width: `${Math.min(100, r.points)}%` }} />
-          </div>
-        </motion.div>
-      ))}
-    </div>
-  );
-}
-
-function MatrixView({ poll, matrixResults }: { poll: Poll; matrixResults: Record<string, Record<string, number>> }) {
-  const rows = poll.settings?.matrixRows || [];
-  const cols = poll.settings?.matrixColumns || [];
-  return (
-    <div className="overflow-x-auto max-w-2xl mx-auto">
-      <table className="w-full text-sm">
-        <thead><tr>
-          <th className="text-left py-2 pr-4 text-white/40 font-normal w-1/4"></th>
-          {cols.map(col => <th key={col.id} className="text-center py-2 px-3 text-white/60 text-xs font-medium">{col.label}</th>)}
-        </tr></thead>
-        <tbody>
-          {rows.map(row => {
-            const rd = matrixResults[row.id] || {};
-            const mx = Math.max(...Object.values(rd), 1);
-            return (
-              <tr key={row.id} className="border-t border-white/10">
-                <td className="py-3 pr-4 text-white/80 text-sm font-medium">{row.label}</td>
-                {cols.map(col => {
-                  const val = rd[col.id] || 0;
-                  return (
-                    <td key={col.id} className="text-center py-3 px-3">
-                      <div className="w-full h-8 bg-white/5 rounded-lg overflow-hidden relative mx-auto" style={{ maxWidth: '60px' }}>
-                        <div className="absolute bottom-0 left-0 right-0 bg-terracotta rounded-lg transition-all" style={{ height: `${Math.round((val / mx) * 100)}%` }} />
-                        <span className="absolute inset-0 flex items-center justify-center text-white text-xs font-bold">{val}</span>
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function EmojiView({ counts }: { counts: Record<string, number> }) {
-  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
-  return (
-    <div className="flex flex-wrap gap-6 justify-center items-end py-8">
-      {EMOJIS.filter(e => counts[e]).map((emoji, i) => {
-        const count = counts[emoji] || 0;
-        const pct = (count / total) * 100;
-        return (
-          <motion.div key={emoji} initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.05 }} className="text-center">
-            <div style={{ fontSize: `${2 + (pct / 20)}rem` }}>{emoji}</div>
-            <div className="text-white font-bold text-lg mt-1">{count}</div>
-            <div className="text-white/30 text-xs">{Math.round(pct)}%</div>
           </motion.div>
-        );
-      })}
-    </div>
-  );
-}
+        )}
+      </AnimatePresence>
 
-function HeatmapView({ points, imageUrl }: { points: { x: number; y: number }[]; imageUrl?: string }) {
-  if (!imageUrl) return <div className="text-white/30 text-center py-8">No image configured</div>;
-  return (
-    <div className="max-w-2xl mx-auto">
-      <div className="relative rounded-2xl overflow-hidden border border-white/10">
-        <img src={imageUrl} alt="" className="w-full object-cover max-h-80" />
-        <div className="absolute inset-0">
-          {points.map((p, i) => (
-            <div key={i} className="absolute w-8 h-8 rounded-full -translate-x-4 -translate-y-4 opacity-60"
-              style={{ left: `${p.x}%`, top: `${p.y}%`, background: 'radial-gradient(circle, rgba(217,108,74,0.8) 0%, transparent 70%)' }} />
-          ))}
-        </div>
+      {/* Main results */}
+      <div className="flex-1 p-8">
+
+        {/* MULTIPLE CHOICE / QUIZ / TRUE_FALSE */}
+        {['multiple_choice','quiz','true_false','image_choice'].includes(poll.type) && (
+          <div className="h-full flex flex-col max-w-4xl mx-auto">
+            <h2 className="font-display text-3xl font-bold text-center mb-8">{poll.title}</h2>
+            {optionStats.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center text-slate-500">
+                  <div className="text-6xl mb-4">⏳</div>
+                  <p className="text-xl">Waiting for responses…</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 space-y-3">
+                {optionStats.map((opt, i) => (
+                  <motion.div key={opt.id ?? i} initial={{ opacity:0, x:-20 }} animate={{ opacity:1, x:0 }} transition={{ delay:i*0.05 }}>
+                    <div className="flex items-center gap-3 mb-1">
+                      <span className="text-white/80 text-sm font-medium w-48 truncate">{opt.text}</span>
+                      <span className="ml-auto text-white/60 text-sm">{opt.count} ({opt.percentage.toFixed(0)}%)</span>
+                    </div>
+                    <div className="h-10 bg-slate-700 rounded-xl overflow-hidden">
+                      <motion.div
+                        className="h-full rounded-xl flex items-center px-3"
+                        style={{ width: `${Math.max(opt.percentage, 2)}%`, backgroundColor: COLORS[i % COLORS.length] }}
+                        initial={{ width:0 }} animate={{ width:`${Math.max(opt.percentage,2)}%` }}
+                        transition={{ duration:0.6, ease:'easeOut' }}
+                      >
+                        {opt.percentage > 15 && <span className="text-white font-bold text-sm">{opt.percentage.toFixed(0)}%</span>}
+                      </motion.div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* WORD CLOUD */}
+        {poll.type === 'word_cloud' && (
+          <div className="h-full flex flex-col items-center justify-center max-w-4xl mx-auto">
+            <h2 className="font-display text-3xl font-bold text-center mb-10">{poll.title}</h2>
+            <div className="flex flex-wrap gap-3 justify-center">
+              <AnimatePresence>
+                {words.map((w, i) => (
+                  <motion.span key={w.text} initial={{ opacity:0, scale:0 }} animate={{ opacity:1, scale:1 }} transition={{ delay: i*0.03 }}
+                    className="rounded-2xl px-4 py-2 font-bold text-white"
+                    style={{
+                      fontSize: `${Math.max(14, Math.min(48, 14 + w.count * 6))}px`,
+                      backgroundColor: COLORS[i % COLORS.length],
+                    }}>
+                    {w.text}
+                  </motion.span>
+                ))}
+              </AnimatePresence>
+              {words.length === 0 && <p className="text-slate-500 text-xl">Waiting for words…</p>}
+            </div>
+          </div>
+        )}
+
+        {/* NPS */}
+        {poll.type === 'nps' && (
+          <div className="h-full flex flex-col max-w-3xl mx-auto">
+            <h2 className="font-display text-3xl font-bold text-center mb-8">{poll.title}</h2>
+            <div className="text-center mb-8">
+              <div className="text-7xl font-display font-black text-terracotta-400">
+                {results?.average?.toFixed(1) ?? '—'}
+              </div>
+              <p className="text-slate-400 mt-2">Average NPS Score</p>
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={Object.entries(results?.distribution ?? {}).map(([k,v])=>({score:k,count:v}))}>
+                <XAxis dataKey="score" tick={{ fill:'#94a3b8', fontSize:12 }}/>
+                <YAxis tick={{ fill:'#94a3b8', fontSize:12 }}/>
+                <Tooltip contentStyle={{ background:'#1e293b', border:'1px solid #475569', borderRadius:'8px' }}/>
+                <Bar dataKey="count" fill="#D96C4A" radius={[4,4,0,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* RATING */}
+        {poll.type === 'rating' && (
+          <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center">
+            <h2 className="font-display text-3xl font-bold mb-8">{poll.title}</h2>
+            <div className="text-8xl font-display font-black text-yellow-400 mb-2">{results?.average?.toFixed(1) ?? '—'}</div>
+            <div className="flex gap-2 justify-center mb-6">
+              {[1,2,3,4,5].map(s => (
+                <span key={s} className={`text-4xl ${(results?.average ?? 0) >= s ? 'text-yellow-400' : 'text-slate-700'}`}>★</span>
+              ))}
+            </div>
+            <p className="text-slate-400">{poll.uniqueParticipants} ratings</p>
+          </div>
+        )}
+
+        {/* QUIZ LEADERBOARD */}
+        {poll.type === 'quiz' && leaderboard.length > 0 && (
+          <div className="max-w-2xl mx-auto">
+            <h2 className="font-display text-3xl font-bold text-center mb-8 flex items-center justify-center gap-2">
+              <Trophy className="text-yellow-400"/> Live Leaderboard
+            </h2>
+            <div className="space-y-3">
+              {leaderboard.slice(0,10).map((entry, i) => (
+                <motion.div key={entry.name} initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }} transition={{ delay:i*0.05 }}
+                  className={`flex items-center gap-4 p-4 rounded-2xl border ${i===0 ? 'bg-yellow-500/20 border-yellow-500/40' : i===1 ? 'bg-slate-400/10 border-slate-400/30' : i===2 ? 'bg-orange-500/10 border-orange-500/30' : 'bg-slate-800 border-slate-700'}`}>
+                  <span className="text-2xl w-8 text-center">{i===0 ? '🥇' : i===1 ? '🥈' : i===2 ? '🥉' : `#${i+1}`}</span>
+                  <span className="flex-1 font-semibold text-lg">{entry.name}</span>
+                  <span className="font-bold text-xl text-terracotta-400">{entry.score}</span>
+                  <span className="text-slate-400 text-sm flex items-center gap-1"><Clock size={12}/>{entry.timeTaken}s</span>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* EMOJI */}
+        {poll.type === 'emoji' && (
+          <div className="h-full flex flex-col items-center justify-center">
+            <h2 className="font-display text-3xl font-bold text-center mb-10">{poll.title}</h2>
+            <div className="flex flex-wrap gap-6 justify-center">
+              {optionStats.map((opt, i) => (
+                <motion.div key={i} className="text-center" initial={{ scale:0 }} animate={{ scale:1 }} transition={{ delay:i*0.05 }}>
+                  <div className="mb-2" style={{ fontSize:`${Math.max(40, Math.min(120, 40 + opt.count * 8))}px` }}>{opt.text}</div>
+                  <p className="text-slate-400 font-bold">{opt.count}</p>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* RANKING */}
+        {poll.type === 'ranking' && (
+          <div className="max-w-2xl mx-auto">
+            <h2 className="font-display text-3xl font-bold text-center mb-8">{poll.title}</h2>
+            <div className="space-y-3">
+              {optionStats.sort((a,b) => b.count - a.count).map((opt, i) => (
+                <div key={i} className="flex items-center gap-4 p-4 bg-slate-800 rounded-2xl border border-slate-700">
+                  <span className="text-2xl font-black text-terracotta-400 w-8">#{i+1}</span>
+                  <span className="flex-1 font-semibold">{opt.text}</span>
+                  <div className="w-32 h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <motion.div className="h-full rounded-full bg-terracotta-500" style={{ width:`${opt.percentage}%` }}
+                      initial={{ width:0 }} animate={{ width:`${opt.percentage}%` }} transition={{ duration:0.6 }}/>
+                  </div>
+                  <span className="text-slate-400 text-sm w-12 text-right">{opt.percentage.toFixed(0)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Q&A */}
+        {poll.type === 'qa' && (
+          <div className="max-w-3xl mx-auto">
+            <h2 className="font-display text-3xl font-bold text-center mb-8">{poll.title}</h2>
+            <div className="space-y-3">
+              {(results?.questions ?? []).slice(0,8).map((q, i) => (
+                <motion.div key={i} initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:i*0.05 }}
+                  className="p-4 bg-slate-800 border border-slate-700 rounded-2xl">
+                  <p className="text-white font-medium mb-2">"{q.text}"</p>
+                  <div className="flex items-center justify-between text-sm text-slate-400">
+                    <span>{q.author}</span>
+                    <span className="flex items-center gap-1">👍 {q.upvotes}</span>
+                  </div>
+                </motion.div>
+              ))}
+              {(results?.questions ?? []).length === 0 && <p className="text-center text-slate-500 py-12">No questions yet…</p>}
+            </div>
+          </div>
+        )}
+
+        {/* DEFAULT FALLBACK: bar chart */}
+        {!['multiple_choice','quiz','word_cloud','nps','rating','true_false','image_choice','emoji','ranking','qa'].includes(poll.type) && (
+          <div className="max-w-4xl mx-auto h-full flex flex-col">
+            <h2 className="font-display text-3xl font-bold text-center mb-8">{poll.title}</h2>
+            <ResponsiveContainer width="100%" height={340}>
+              <BarChart data={optionStats} margin={{ left:-10 }}>
+                <XAxis dataKey="text" tick={{ fill:'#94a3b8', fontSize:12 }}/>
+                <YAxis tick={{ fill:'#94a3b8', fontSize:12 }}/>
+                <Tooltip contentStyle={{ background:'#1e293b', border:'1px solid #475569', borderRadius:'8px', fontSize:'12px' }}/>
+                <Bar dataKey="count" radius={[8,8,0,0]}>
+                  {optionStats.map((_:unknown, i:number) => <Cell key={i} fill={COLORS[i % COLORS.length]}/>)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
-      <p className="text-white/30 text-sm text-center mt-3">{points.length} clicks recorded</p>
-    </div>
-  );
-}
 
-function MatchingView({ matchingResults }: { matchingResults: { left: string; right: string; correct: number; total: number }[] }) {
-  return (
-    <div className="max-w-xl mx-auto space-y-3">
-      {matchingResults.map((m, i) => {
-        const pct = m.total ? Math.round((m.correct / m.total) * 100) : 0;
-        return (
-          <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
-            className="flex items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/10">
-            <span className="flex-1 text-white/80 text-sm font-medium">{m.left}</span>
-            <span className="text-white/30">→</span>
-            <span className="flex-1 text-white/80 text-sm font-medium">{m.right}</span>
-            <span className={`text-sm font-bold ${pct >= 60 ? 'text-green-400' : 'text-red-400'}`}>{pct}%</span>
-          </motion.div>
-        );
-      })}
+      {/* Bottom bar */}
+      <div className="px-6 py-2 bg-slate-800/60 border-t border-slate-700 flex items-center justify-between text-xs text-slate-500">
+        <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"/>Live</span>
+        <span>{pollTypeIcon(poll.type)} {pollTypeLabel(poll.type)}</span>
+        <span>{poll.totalVotes} votes · {poll.uniqueParticipants} participants</span>
+      </div>
     </div>
   );
 }
