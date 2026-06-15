@@ -70,6 +70,13 @@ export default function Join() {
 
   return (
     <div className="min-h-screen bg-cream-100 flex flex-col items-center justify-center px-4">
+
+      <motion.div initial={{ opacity:0, x:-20 }} animate={{ opacity:1, x:0 }} transition={{ delay:0.2 }} className="fixed top-4 left-4 z-50">
+        <Link to="/" className="flex items-center gap-2 bg-white/80 backdrop-blur border border-cream-300 px-3 py-2 rounded-xl text-sm font-medium text-slate-600 hover:text-terracotta-600 transition-all shadow-sm">
+          <BarChart3 size={14}/> Home
+        </Link>
+      </motion.div>
+
       <Link to="/" className="flex items-center gap-2 mb-10">
         <div className="w-9 h-9 bg-terracotta-500 rounded-xl flex items-center justify-center shadow-md">
           <BarChart3 size={18} className="text-white" />

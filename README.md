@@ -231,3 +231,53 @@ cp .env.example .env
 ---
 
 Built with ❤️ — OmniPoll v3 GODMODE
+
+---
+
+## 🔧 Fix: ECONNREFUSED on Local Dev
+
+The `connect ECONNREFUSED` error appears **only in local development** because the Vite dev server doesn't run the Express API. Fix it in **two** terminal tabs:
+
+**Terminal 1 — API server:**
+```bash
+cp .env.example .env
+# Edit .env and fill in DATABASE_URL, JWT_SECRET, PUSHER_* values
+npm run dev:api
+# → API running at http://localhost:3001
+```
+
+**Terminal 2 — Frontend:**
+```bash
+npm run dev
+# → App running at http://localhost:8080
+# Vite automatically proxies /api/* → localhost:3001
+```
+
+> **On Vercel (production):** This error never occurs. Vercel runs `api/index.js` as a serverless function automatically.
+
+---
+
+## 📁 Pages & Routes
+
+| Route | Page | Auth |
+|---|---|---|
+| `/` | Landing page | Public |
+| `/login` | Sign in | Public |
+| `/signup` | Create account (2-step) | Public |
+| `/join/:code` | Join a poll by code | Public |
+| `/participate/:pollId` | Take quiz/poll | Public (guest OK) |
+| `/dashboard` | Teacher hub | Teacher |
+| `/create` | 5-step poll wizard | Teacher |
+| `/results/:pollId` | Live results + attempts | Teacher |
+| `/present/:pollId` | Fullscreen presenter | Teacher |
+| `/analytics` | Global analytics | Teacher |
+| `/classrooms` | Classroom list | All |
+| `/classrooms/:id` | Students, polls, results | Teacher |
+| `/templates` | Template library | Teacher |
+| `/leaderboard` | Top scorers | All |
+| `/notifications` | Notification center | All |
+| `/settings` | Profile & security | All |
+| `/student/dashboard` | Student home | Student |
+| `/student/results` | All my attempts | Student |
+| `/attempt/:id/keysheet` | Detailed answer sheet | Student |
+| `/analyse/:pollId` | Deep poll analytics | Teacher |

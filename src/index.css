@@ -112,3 +112,40 @@
   from { opacity: 0; transform: scale(0.97); }
   to   { opacity: 1; transform: scale(1); }
 }
+
+/* ── Enhanced animations ── */
+@keyframes blob {
+  0%,100% { transform: translate(0,0) scale(1); }
+  33%      { transform: translate(20px,-25px) scale(1.06); }
+  66%      { transform: translate(-15px,12px) scale(0.97); }
+}
+.animate-blob { animation: blob 18s ease-in-out infinite; }
+.animation-delay-2 { animation-delay: 2s; }
+.animation-delay-4 { animation-delay: 4s; }
+
+/* ── Landing hero gradient text ── */
+.text-gradient {
+  background: linear-gradient(135deg, #D96C4A 0%, #A6472C 50%, #E47C52 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Glass cards ── */
+.glass-card {
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(228,204,148,0.5);
+  border-radius: 1rem;
+}
+
+/* ── Shimmer effect ── */
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%);
+  background-size: 200% auto;
+  animation: shimmer 2.5s linear infinite;
+}

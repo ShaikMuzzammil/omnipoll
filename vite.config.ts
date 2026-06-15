@@ -7,16 +7,27 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
+  server: {
+    port: 8080,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
   build: {
     outDir: 'dist',
     sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          charts: ['recharts'],
-          motion: ['framer-motion'],
-          ui: ['@radix-ui/react-dialog', '@radix-ui/react-tabs', '@radix-ui/react-select'],
+          vendor:  ['react', 'react-dom', 'react-router-dom'],
+          charts:  ['recharts'],
+          motion:  ['framer-motion'],
+          pusher:  ['pusher-js'],
+          ui:      ['@radix-ui/react-dialog','@radix-ui/react-tabs','@radix-ui/react-select'],
         },
       },
     },
