@@ -19,13 +19,29 @@ app.use((req, res, next) => {
 });
 
 // ── DB ────────────────────────────────────────────────────────────────────────
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  max: 5,
-});
+let _pool = null;
+function getPool() {
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL environment variable is not set. Please add it in Vercel → Settings → Environment Variables.');
+  }
+  if (!_pool) {
+    _pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
+      max: 3,
+      connectionTimeoutMillis: 8000,
+      idleTimeoutMillis: 30000,
+    });
+    _pool.on('error', (err) => {
+      console.error('PostgreSQL pool error:', err.message);
+      _pool = null; // reset so next request retries
+    });
+  }
+  return _pool;
+}
 
 async function db(sql, params = []) {
+  const pool   = getPool();
   const client = await pool.connect();
   try { return await client.query(sql, params); }
   finally { client.release(); }
