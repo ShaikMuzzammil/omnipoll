@@ -47,6 +47,137 @@ async function db(sql, params = []) {
   finally { client.release(); }
 }
 
+// ── Auto-migration (runs on cold start if tables missing) ─────────────────────
+let _migrated = false;
+async function ensureTables() {
+  if (_migrated) return;
+  try {
+    await db(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'teacher',
+        institution TEXT,
+        avatar TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS polls (
+        id TEXT PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        creator_id TEXT NOT NULL,
+        classroom_id TEXT,
+        options JSONB NOT NULL DEFAULT '[]',
+        matrix_rows JSONB NOT NULL DEFAULT '[]',
+        matrix_cols JSONB NOT NULL DEFAULT '[]',
+        settings JSONB NOT NULL DEFAULT '{}',
+        scheduled_start_at TIMESTAMPTZ,
+        closed_at TIMESTAMPTZ,
+        results_released_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS votes (
+        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        poll_id TEXT NOT NULL,
+        user_id TEXT,
+        guest_name TEXT,
+        guest_email TEXT,
+        selected_options JSONB NOT NULL DEFAULT '[]',
+        text_answer TEXT,
+        numeric_answer NUMERIC,
+        ranking_order JSONB,
+        matrix_answers JSONB,
+        heatmap_x NUMERIC,
+        heatmap_y NUMERIC,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS attempts (
+        id TEXT PRIMARY KEY,
+        poll_id TEXT NOT NULL,
+        user_id TEXT,
+        guest_name TEXT,
+        guest_email TEXT,
+        status TEXT NOT NULL DEFAULT 'in_progress',
+        score NUMERIC,
+        max_score NUMERIC,
+        percentage NUMERIC,
+        passed BOOLEAN,
+        time_taken INTEGER,
+        answers JSONB DEFAULT '[]',
+        answers_draft JSONB DEFAULT '{}',
+        submitted_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS classrooms (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        code TEXT UNIQUE NOT NULL,
+        teacher_id TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS classroom_students (
+        classroom_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (classroom_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS qa_items (
+        id TEXT PRIMARY KEY,
+        poll_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        author_name TEXT NOT NULL DEFAULT 'Anonymous',
+        author_user_id TEXT,
+        upvotes INTEGER NOT NULL DEFAULT 0,
+        answered BOOLEAN NOT NULL DEFAULT FALSE,
+        answer TEXT,
+        status TEXT NOT NULL DEFAULT 'approved',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        link TEXT,
+        is_read BOOLEAN NOT NULL DEFAULT FALSE,
+        data JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS templates (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        poll_id TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    _migrated = true;
+    console.log('[OmniPoll] Tables verified ✓');
+  } catch (e) {
+    console.error('[OmniPoll] ensureTables error:', e.message);
+  }
+}
+
+// Run auto-migration middleware
+app.use(async (req, res, next) => {
+  if (req.path.startsWith('/api/') || req.path === '/api/health') {
+    await ensureTables();
+  }
+  next();
+});
+
+
+
 // ── Pusher ────────────────────────────────────────────────────────────────────
 let pusher = null;
 if (process.env.PUSHER_APP_ID) {
