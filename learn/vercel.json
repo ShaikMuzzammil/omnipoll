@@ -1,0 +1,15 @@
+{
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install && cd api && npm install",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/((?!api).*)", "destination": "/index.html" }
+  ],
+  "functions": { "api/index.js": { "maxDuration": 30 } },
+  "env": {
+    "VITE_APP_NAME": "OmniPoll Learn",
+    "VITE_APP_ROLE": "student"
+  }
+}

@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 36 67% 97%;
+    --foreground: 20 14% 18%;
+    --card: 36 50% 98%;
+    --card-foreground: 20 14% 18%;
+    --popover: 36 50% 98%;
+    --popover-foreground: 20 14% 18%;
+    --primary: 17 63% 57%;
+    --primary-foreground: 36 67% 97%;
+    --secondary: 36 40% 92%;
+    --secondary-foreground: 20 14% 18%;
+    --muted: 36 30% 94%;
+    --muted-foreground: 20 10% 46%;
+    --accent: 36 40% 90%;
+    --accent-foreground: 20 14% 18%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 36 30% 88%;
+    --input: 36 30% 88%;
+    --ring: 17 63% 57%;
+    --radius: 0.6rem;
+    --sidebar-background: 36 45% 96%;
+    --sidebar-foreground: 20 14% 18%;
+    --sidebar-border: 36 28% 87%;
+  }
+
+  * { @apply border-border; }
+  body {
+    @apply bg-cream-100 text-foreground font-body antialiased;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23D96C4A' fill-opacity='0.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  h1, h2, h3 { @apply font-display; }
+}
+
+@layer components {
+  /* ── Core cards ── */
+  .op-card {
+    @apply bg-white/90 border border-cream-300 rounded-xl shadow-sm
+           hover:shadow-md transition-all duration-200 hover:-translate-y-0.5;
+  }
+  .op-card-flat {
+    @apply bg-white/80 border border-cream-300 rounded-xl;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar-link {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+           text-slate-700 hover:bg-terracotta-50 hover:text-terracotta-600
+           transition-all duration-150;
+  }
+  .sidebar-link.active {
+    @apply bg-terracotta-500 text-white shadow-sm;
+  }
+
+  /* ── Stat cards ── */
+  .stat-card {
+    @apply op-card p-5 flex flex-col gap-1;
+  }
+  .stat-value {
+    @apply text-3xl font-display font-bold text-terracotta-600;
+  }
+
+  /* ── Poll type tiles ── */
+  .type-tile {
+    @apply border-2 border-cream-300 rounded-xl p-4 cursor-pointer text-center
+           hover:border-terracotta-400 hover:bg-terracotta-50
+           transition-all duration-150 select-none;
+  }
+  .type-tile.selected {
+    @apply border-terracotta-500 bg-terracotta-50 ring-2 ring-terracotta-200;
+  }
+
+  /* ── Quiz timer ring ── */
+  .timer-ring { transform-origin: center; transition: stroke-dashoffset 1s linear; }
+
+  /* ── Badges ── */
+  .badge-conduct { @apply bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium; }
+  .badge-live    { @apply bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium animate-pulse; }
+  .badge-closed  { @apply bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium; }
+  .badge-draft   { @apply bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium; }
+
+  /* ── Keysheet answer rows ── */
+  .answer-correct { @apply bg-green-50 border-l-4 border-green-500 px-3 py-2 rounded-r-lg; }
+  .answer-wrong   { @apply bg-red-50 border-l-4 border-red-400 px-3 py-2 rounded-r-lg; }
+  .answer-partial { @apply bg-yellow-50 border-l-4 border-yellow-400 px-3 py-2 rounded-r-lg; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-cream-400 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-terracotta-300; }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-terracotta-600 to-terracotta-400 bg-clip-text text-transparent;
+  }
+  .page-enter { animation: fadeIn 0.35s ease-out both; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Enhanced animations ── */
+@keyframes blob {
+  0%,100% { transform: translate(0,0) scale(1); }
+  33%      { transform: translate(20px,-25px) scale(1.06); }
+  66%      { transform: translate(-15px,12px) scale(0.97); }
+}
+.animate-blob { animation: blob 18s ease-in-out infinite; }
+.animation-delay-2 { animation-delay: 2s; }
+.animation-delay-4 { animation-delay: 4s; }
+
+/* ── Landing hero gradient text ── */
+.text-gradient {
+  background: linear-gradient(135deg, #D96C4A 0%, #A6472C 50%, #E47C52 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Glass cards ── */
+.glass-card {
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(228,204,148,0.5);
+  border-radius: 1rem;
+}
+
+/* ── Shimmer effect ── */
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%);
+  background-size: 200% auto;
+  animation: shimmer 2.5s linear infinite;
+}

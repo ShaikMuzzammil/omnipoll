@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-ssr/
+.vercel/
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+npm-debug.log*
+.DS_Store
+Thumbs.db
+api/node_modules/
