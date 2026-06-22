@@ -10,8 +10,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "dev:api": "node server.cjs",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:api\"",
-    "start": "node server.cjs"
+    "dev:all": "concurrently -n \"API,WEB\" -c \"blue,green\" \"npm run dev:api\" \"npm run dev\"",
+    "start": "node server.cjs",
+    "migrate": "node scripts/migrate.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

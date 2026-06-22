@@ -10,7 +10,7 @@ import { pollTypeLabel, pollTypeIcon } from '@/lib/utils';
 import type { Poll } from '@/lib/types';
 
 const COLORS = ['#D96C4A','#7A8C6E','#E4CC94','#A6472C','#5A6A4E','#EEDBB0','#C55A38'];
-const STUDENT_APP_URL = import.meta.env.VITE_STUDENT_APP_URL || window.location.origin;
+const STUDENT_APP_URL = import.meta.env.VITE_STUDENT_APP_URL || 'https://omnipoll-learn.vercel.app';
 
 export default function Present() {
   const { pollId } = useParams<{ pollId:string }>();

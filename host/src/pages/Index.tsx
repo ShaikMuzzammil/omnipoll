@@ -33,16 +33,16 @@ const TESTIMONIALS = [
   { name:'Dr. Anita Nair', role:'College Professor, Chennai',   text:'Key sheets are a game-changer. Students review every answer with explanations right after results are released.' },
 ];
 const BG_ICONS = [
-  { Icon:BarChart2,     x:'7%',  y:'18%', s:32, r:-15, o:0.09 },
-  { Icon:Radio,         x:'88%', y:'14%', s:26, r:10,  o:0.08 },
-  { Icon:FileText,      x:'4%',  y:'58%', s:28, r:-8,  o:0.07 },
-  { Icon:PieChart,      x:'92%', y:'52%', s:26, r:12,  o:0.08 },
-  { Icon:MessageSquare, x:'14%', y:'80%', s:22, r:-5,  o:0.07 },
-  { Icon:Activity,      x:'83%', y:'82%', s:30, r:8,   o:0.08 },
-  { Icon:Users,         x:'50%', y:'9%',  s:20, r:0,   o:0.06 },
-  { Icon:Zap,           x:'76%', y:'30%', s:18, r:15,  o:0.07 },
-  { Icon:Star,          x:'24%', y:'36%', s:16, r:-10, o:0.06 },
-  { Icon:Trophy,        x:'62%', y:'72%', s:22, r:5,   o:0.07 },
+  { Icon:BarChart2,     x:'7%',  y:'18%', s:40, r:-15, o:0.18 },
+  { Icon:Radio,         x:'88%', y:'14%', s:34, r:10,  o:0.16 },
+  { Icon:FileText,      x:'4%',  y:'58%', s:36, r:-8,  o:0.15 },
+  { Icon:PieChart,      x:'92%', y:'52%', s:32, r:12,  o:0.17 },
+  { Icon:MessageSquare, x:'14%', y:'80%', s:30, r:-5,  o:0.15 },
+  { Icon:Activity,      x:'83%', y:'82%', s:38, r:8,   o:0.16 },
+  { Icon:Users,         x:'50%', y:'9%',  s:28, r:0,   o:0.14 },
+  { Icon:Zap,           x:'76%', y:'30%', s:26, r:15,  o:0.15 },
+  { Icon:Star,          x:'24%', y:'36%', s:24, r:-10, o:0.14 },
+  { Icon:Trophy,        x:'62%', y:'72%', s:30, r:5,   o:0.16 },
 ];
 const LIVE_DEMO_DATA = [
   { label:'Product improvements', pct:42, color:'#D96C4A' },
@@ -195,7 +195,7 @@ export default function Index() {
             style={{ left:x, top:y, opacity:o, transform:`rotate(${r}deg)` }}
             animate={{ y:[0,-10,5,0], rotate:[r,r+4,r-2,r] }}
             transition={{ duration:14+i*1.5, repeat:Infinity, ease:'easeInOut', delay:i*1.1 }}>
-            <Icon size={s} className="text-terracotta-400"/>
+            <Icon size={s} className="text-terracotta-500"/>
           </motion.div>
         ))}
         <div className="absolute inset-0 opacity-[0.035]"

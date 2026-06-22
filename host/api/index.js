@@ -1229,6 +1229,112 @@ app.post('/api/polls/:id/tab-switch', async (req, res) => {
   } catch (e) { err(res, 500, e.message); }
 });
 
+
+// ── Global leaderboard ──────────────────────────────────────────────────────
+app.get('/api/leaderboard', async (req, res) => {
+  const u = await auth(req, res);
+  if (!u) return;
+  try {
+    const r = await db(
+      `SELECT
+         COALESCE(usr.name, a.guest_name, 'Anonymous') AS name,
+         a.user_id,
+         COUNT(a.id)::int   AS attempts,
+         AVG(a.percentage)::float AS avg_score,
+         MAX(a.percentage)::float AS best_score,
+         SUM(a.score)::float      AS total_score
+       FROM attempts a
+       LEFT JOIN users usr ON usr.id = a.user_id
+       JOIN  polls p ON p.id = a.poll_id AND p.creator_id = $1
+       WHERE a.status = 'submitted' AND a.percentage IS NOT NULL
+       GROUP BY COALESCE(usr.name, a.guest_name,'Anonymous'), a.user_id
+       ORDER BY avg_score DESC, attempts DESC
+       LIMIT 50`,
+      [u.id]
+    );
+    const leaderboard = r.rows.map((row, i) => ({
+      rank: i + 1,
+      name: row.name,
+      attempts: row.attempts,
+      avgScore: Math.round(row.avg_score || 0),
+      bestScore: Math.round(row.best_score || 0),
+      totalScore: Math.round(row.total_score || 0),
+    }));
+    ok(res, leaderboard);
+  } catch (e) { err(res, 500, e.message); }
+});
+
+// ── Student leaderboard (for learn app) ──────────────────────────────────────
+app.get('/api/leaderboard/student', async (req, res) => {
+  const u = await auth(req, res, true);
+  try {
+    const r = await db(
+      `SELECT
+         COALESCE(usr.name, a.guest_name, 'Anonymous') AS name,
+         a.user_id,
+         COUNT(a.id)::int AS attempts,
+         AVG(a.percentage)::float AS avg_score,
+         MAX(a.percentage)::float AS best_score
+       FROM attempts a
+       LEFT JOIN users usr ON usr.id = a.user_id
+       WHERE a.status = 'submitted' AND a.percentage IS NOT NULL
+       GROUP BY COALESCE(usr.name, a.guest_name,'Anonymous'), a.user_id
+       ORDER BY avg_score DESC LIMIT 30`
+    );
+    ok(res, r.rows.map((row,i)=>({
+      rank:i+1, name:row.name, attempts:row.attempts,
+      avgScore:Math.round(row.avg_score||0), bestScore:Math.round(row.best_score||0),
+      isMe: u ? row.user_id === u.id : false,
+    })));
+  } catch (e) { err(res, 500, e.message); }
+});
+
+// ── Email result to student ────────────────────────────────────────────────
+app.post('/api/attempts/:id/email-result', async (req, res) => {
+  const u = await auth(req, res, true);
+  try {
+    const aR = await db(
+      'SELECT a.*, p.title as poll_title FROM attempts a JOIN polls p ON p.id=a.poll_id WHERE a.id=$1',
+      [req.params.id]
+    );
+    if (!aR.rows[0]) return err(res, 404, 'Attempt not found');
+    const a = aR.rows[0];
+    const toEmail = a.guest_email || (u ? (await db('SELECT email FROM users WHERE id=$1',[u.id])).rows[0]?.email : null);
+    if (!toEmail) return err(res, 400, 'No email on record for this attempt');
+    // Send via Resend if configured
+    if (process.env.RESEND_API_KEY) {
+      const htmlBody = `
+        <div style="font-family:system-ui,sans-serif;max-width:520px;margin:auto;padding:24px;background:#FEFAF5;border-radius:12px;border:1px solid #E4CC94">
+          <div style="background:#D96C4A;color:white;padding:20px;border-radius:8px;text-align:center;margin-bottom:20px">
+            <h1 style="margin:0;font-size:24px">OmniPoll Results</h1>
+            <p style="margin:8px 0 0;opacity:0.85">${a.poll_title}</p>
+          </div>
+          <div style="background:white;border-radius:8px;padding:20px;border:1px solid #E4CC94;text-align:center;margin-bottom:16px">
+            <p style="font-size:14px;color:#64748b;margin:0 0 8px">Your Score</p>
+            <p style="font-size:48px;font-weight:900;color:#D96C4A;margin:0">${Math.round(a.percentage||0)}%</p>
+            <p style="font-size:14px;color:#64748b;margin:8px 0 0">${a.score||0}/${a.max_score||0} points · ${a.passed?'✅ Passed':'❌ Not passed'}</p>
+          </div>
+          <a href="${process.env.VITE_STUDENT_APP_URL||'https://omnipoll-learn.vercel.app'}/attempt/${a.id}/keysheet"
+             style="display:block;background:#D96C4A;color:white;text-decoration:none;padding:14px;border-radius:8px;text-align:center;font-weight:700;font-size:15px">
+            View Full Key Sheet →
+          </a>
+          <p style="text-align:center;font-size:12px;color:#94a3b8;margin-top:16px">OmniPoll · The most powerful polling platform</p>
+        </div>`;
+      await fetch('https://api.resend.com/emails', {
+        method:'POST',
+        headers:{ 'Authorization':`Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          from: process.env.FROM_EMAIL||'noreply@omnipoll.app',
+          to: [toEmail],
+          subject: `Your OmniPoll results: ${a.poll_title}`,
+          html: htmlBody,
+        }),
+      });
+    }
+    ok(res, { message: 'Result emailed', to: toEmail });
+  } catch (e) { err(res, 500, e.message); }
+});
+
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (_, res) => res.json({ status:'ok', ts: new Date().toISOString() }));
 

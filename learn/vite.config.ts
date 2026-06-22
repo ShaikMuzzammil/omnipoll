@@ -8,10 +8,10 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, './src') },
   },
   server: {
-    port: 8080,
+    port: 8081,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:3002',
         changeOrigin: true,
         secure: false,
       },
@@ -24,10 +24,8 @@ export default defineConfig({
       output: {
         manualChunks: {
           vendor:  ['react', 'react-dom', 'react-router-dom'],
-          charts:  ['recharts'],
           motion:  ['framer-motion'],
           pusher:  ['pusher-js'],
-          ui:      ['@radix-ui/react-dialog','@radix-ui/react-tabs','@radix-ui/react-select'],
         },
       },
     },

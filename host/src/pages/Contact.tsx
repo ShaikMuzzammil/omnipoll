@@ -20,7 +20,7 @@ export default function Contact() {
   const update = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement|HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
 
-  const step1Valid = form.name.trim() && form.email.trim() && form.message.trim();
+  const step1Valid = form.name.trim() && form.email.trim();
 
   const handleSend = async () => {
     setSend(true);
@@ -138,7 +138,7 @@ export default function Contact() {
                   <div className="relative">
                     <MessageSquare size={14} className="absolute left-3 top-3.5 text-slate-400"/>
                     <textarea value={form.message} onChange={update('message')} rows={5}
-                      placeholder="Tell us what's on your mind..."
+                      placeholder="Tell us what's on your mind... (optional)"
                       className="w-full pl-9 pr-3.5 py-2.5 border border-cream-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-200 focus:border-terracotta-400 transition-all resize-none"/>
                   </div>
                 </div>

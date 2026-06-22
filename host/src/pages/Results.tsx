@@ -17,6 +17,7 @@ import { pollTypeLabel, pollTypeIcon, formatDate, formatDuration, scoreColor } f
 import type { Poll, Attempt } from '@/lib/types';
 
 const COLORS = ['#D96C4A','#7A8C6E','#E4CC94','#A6472C','#5A6A4E','#EEDBB0'];
+const STUDENT_APP_URL = import.meta.env.VITE_STUDENT_APP_URL ?? 'https://omnipoll-learn.vercel.app';
 
 export default function Results() {
   const { pollId } = useParams<{ pollId: string }>();
@@ -59,8 +60,8 @@ export default function Results() {
   });
 
   const copyLink = () => {
-    navigator.clipboard.writeText(`${window.location.origin}/join/${poll?.code}`);
-    toast.success('Join link copied!');
+    navigator.clipboard.writeText(`${STUDENT_APP_URL}/join/${poll?.code}`);
+    toast.success('Student join link copied!');
   };
 
   if (pollLoading || !poll) return (
@@ -91,10 +92,11 @@ export default function Results() {
             <span className="font-mono text-sm font-bold text-terracotta-700 tracking-widest">{poll.code}</span>
             <button onClick={copyLink} className="p-1 hover:bg-cream-300 rounded"><Copy size={12}/></button>
           </div>
-          <Link to={`/present/${pollId}`} target="_blank"
+          <button
+            onClick={() => window.open(`/present/${pollId}`, '_blank', 'noopener,noreferrer')}
             className="flex items-center gap-1.5 px-3 py-2 bg-white border border-cream-300 hover:border-terracotta-300 rounded-xl text-sm font-medium text-slate-700 transition-all">
             <ExternalLink size={14}/> Present
-          </Link>
+          </button>
           <Link to={`/analyse/${pollId}`}
             className="flex items-center gap-1.5 px-3 py-2 bg-white border border-cream-300 hover:border-terracotta-300 rounded-xl text-sm font-medium text-slate-700 transition-all">
             <BarChart3 size={14}/> Deep Analysis

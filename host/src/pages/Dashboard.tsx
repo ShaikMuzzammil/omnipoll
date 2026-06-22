@@ -6,7 +6,7 @@ import {
   PlusCircle, BarChart3, Users, TrendingUp, FileText,
   Search, LayoutGrid, List, Loader2, ExternalLink,
   Play, Square, Copy, Trash2, MoreHorizontal, Activity,
-  ArrowUpRight, Zap, Clock, BookOpen,
+  ArrowUpRight, Zap, Clock, BookOpen, Layers,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { pollsApi } from '@/lib/api';
@@ -343,7 +343,7 @@ export default function Dashboard() {
             <h3 className="font-display font-semibold text-slate-700 mb-3 text-sm">Quick Actions</h3>
             <div className="space-y-2">
               {[
-                { label:'Create from template', href:'/templates', icon:Layers2 },
+                { label:'Create from template', href:'/templates', icon:Layers },
                 { label:'View classrooms',       href:'/classrooms', icon:GraduationCap },
                 { label:'Check leaderboard',     href:'/leaderboard', icon:Trophy },
               ].map(a => (
@@ -367,9 +367,7 @@ export default function Dashboard() {
 /* ── Sub-components ─────────────────────────────────────────────────────────── */
 import { GraduationCap, Trophy } from 'lucide-react';
 
-function Layers2(props: React.ComponentProps<typeof LayoutGrid>) {
-  return <LayoutGrid {...props} />;
-}
+
 
 function StatusBadge({ status, tiny = false }: { status: string; tiny?: boolean }) {
   const map: Record<string, string> = {

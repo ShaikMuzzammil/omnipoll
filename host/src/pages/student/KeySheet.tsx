@@ -170,6 +170,25 @@ export default function KeySheet() {
           ))}
         </div>
 
+        {/* Email result button */}
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={async () => {
+              try {
+                const res = await fetch(`/api/attempts/${id}/email-result`, {
+                  method:'POST',
+                  headers:{ Authorization:`Bearer ${localStorage.getItem('op_token')||''}` },
+                });
+                if (res.ok) { alert('Results emailed successfully!'); }
+                else { alert('No email on record for this attempt.'); }
+              } catch { alert('Failed to send email.'); }
+            }}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl text-sm font-semibold transition-colors"
+          >
+            📧 Email Me This Result
+          </button>
+        </div>
+
         {/* Summary footer */}
         <div className="mt-6 p-4 bg-cream-200/60 rounded-2xl text-center">
           <div className="flex items-center justify-center gap-4 text-sm">

@@ -1,0 +1,15 @@
+{
+  "name": "omnipoll-v4-monorepo",
+  "version": "4.0.0",
+  "private": true,
+  "description": "OmniPoll v4 GODMODE — Host + Learn monorepo",
+  "scripts": {
+    "dev:host":    "cd host && npm run dev:all",
+    "dev:learn":   "cd learn && npm run dev:all",
+    "build:host":  "cd host && npm run build",
+    "build:learn": "cd learn && npm run build",
+    "build:all":   "npm run build:host && npm run build:learn",
+    "install:all": "cd host && npm install && cd ../learn && npm install",
+    "migrate":     "cd host && npm run migrate"
+  }
+}

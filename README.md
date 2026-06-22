@@ -1,4 +1,4 @@
-# OmniPoll v4 —  Monorepo
+# OmniPoll v4 — GODMODE Monorepo
 
 > **Two-app architecture** — Teacher host portal + Student learn portal sharing one Neon PostgreSQL database and Pusher Channels real-time layer.
 
