@@ -48,7 +48,7 @@ export default function Analytics() {
           { label:'Total Polls',    value: overview.totalPolls,        icon: BarChart3,  color:'text-terracotta-600' },
           { label:'Total Attempts', value: overview.totalAttempts,     icon: TrendingUp, color:'text-blue-600' },
           { label:'Participants',   value: overview.totalParticipants, icon: Users,      color:'text-green-600' },
-          { label:'Avg Score',      value: `${overview.avgScore.toFixed(0)}%`, icon: Award, color:scoreColor(overview.avgScore) },
+          { label:'Avg Score',      value: `${(overview.avgScore ?? 0).toFixed(0)}%`, icon: Award, color:scoreColor(overview.avgScore ?? 0) },
         ].map((s, i) => (
           <motion.div key={s.label} initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} transition={{ delay:i*0.07 }} className="stat-card">
             <div className="flex items-center justify-between"><span className="text-xs text-slate-500">{s.label}</span><s.icon size={15} className={s.color}/></div>
@@ -126,7 +126,7 @@ export default function Analytics() {
                     <p className="text-xs text-slate-400">{p.attempts} attempts</p>
                   </div>
                   {p.avgScore > 0 && (
-                    <span className={`text-sm font-bold ${scoreColor(p.avgScore)}`}>{p.avgScore.toFixed(0)}%</span>
+                    <span className={`text-sm font-bold ${scoreColor(p.avgScore)}`}>{(p.avgScore ?? 0).toFixed(0)}%</span>
                   )}
                 </div>
               ))}

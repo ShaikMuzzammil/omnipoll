@@ -84,7 +84,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
 
       {/* Nav */}
-      <nav className={cn('flex-1 py-2 overflow-y-auto', collapsed && !mobile ? 'px-2' : 'px-2')}>
+      <nav className={cn('flex-1 py-2 overflow-y-auto scrollbar-thin', collapsed && !mobile ? 'px-2' : 'px-2')}>
         {NAV.map(item => {
           const active   = isActive(item.href);
           const expanded = expandedNav.includes(item.label);
@@ -182,7 +182,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="flex h-screen bg-cream-100 overflow-hidden">
       {/* Desktop sidebar */}
       <motion.aside animate={{ width: collapsed ? 56 : 228 }} transition={{ duration:0.2, ease:'easeInOut' }}
-        className="hidden lg:flex flex-col bg-white border-r border-cream-300 flex-shrink-0 overflow-hidden"
+        className="hidden lg:flex flex-col bg-white border-r border-cream-300 flex-shrink-0 overflow-y-auto"
         style={{ minWidth: collapsed ? 56 : 228 }}>
         <SidebarContent/>
       </motion.aside>

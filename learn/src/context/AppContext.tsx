@@ -81,6 +81,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const login = useCallback((token: string, u: User) => {
     localStorage.setItem('op_token', token);
     setUser(u);
+    // Inject welcome notification
+    const welcomeKey = `welcomed_${u.id}`;
+    if (!localStorage.getItem(welcomeKey)) {
+      localStorage.setItem(welcomeKey, '1');
+      const welcomeNotif: Notification = {
+        id: `welcome-${u.id}`,
+        userId: u.id,
+        type: 'announcement',
+        title: `Welcome to OmniPoll, ${u.name}!`,
+        message: u.role === 'teacher'
+          ? 'Your account is ready. Create your first poll or join one with a code.'
+          : 'Your account is ready. Join a quiz with a code from your teacher.',
+        isRead: false,
+        createdAt: new Date().toISOString(),
+        link: u.role === 'teacher' ? '/create' : '/join',
+      };
+      setNotifs(prev => [welcomeNotif, ...prev]);
+    }
   }, []);
 
   const logout = useCallback(() => {
