@@ -47,7 +47,14 @@ export default function Participate() {
   const pusherRef = useRef<any>(null);
 
   // Detect multi-question quiz
-  const questions = (poll as any)?.questions ?? (poll ? [{ ...poll, options: poll.options }] : []);
+  // Build questions array: use poll.questions if available (multi-Q), else wrap single poll as one question
+  const questions = (() => {
+    if (!poll) return [];
+    const qs = (poll as any).questions;
+    if (qs && Array.isArray(qs) && qs.length > 0) return qs;
+    // Single-question poll: wrap options into one question object
+    return [{ ...poll, options: poll.options, title: poll.title }];
+  })();
   const totalQ    = Math.max(questions.length, 1);
   const q         = questions[currentQ] ?? questions[0];
 

@@ -3,23 +3,25 @@ import { Toaster } from 'sonner';
 import { AppProvider, useApp } from '@/context/AppContext';
 import DashboardLayout from '@/components/DashboardLayout';
 import { ErrorBoundary, FullPageLoader } from '@/components/ErrorBoundary';
-import Index         from '@/pages/Index';
-import Login         from '@/pages/Login';
-import Signup        from '@/pages/Signup';
-import Contact       from '@/pages/Contact';
-import Dashboard     from '@/pages/Dashboard';
-import Create        from '@/pages/Create';
-import Results       from '@/pages/Results';
-import Present       from '@/pages/Present';
-import Analytics     from '@/pages/Analytics';
-import Templates     from '@/pages/Templates';
-import Classrooms    from '@/pages/Classrooms';
+
+import Index          from '@/pages/Index';
+import Login          from '@/pages/Login';
+import Signup         from '@/pages/Signup';
+import Contact        from '@/pages/Contact';
+import Dashboard      from '@/pages/Dashboard';
+import Create         from '@/pages/Create';
+import Results        from '@/pages/Results';
+import Present        from '@/pages/Present';
+import Analytics      from '@/pages/Analytics';
+import Templates      from '@/pages/Templates';
+import Classrooms     from '@/pages/Classrooms';
 import ClassroomDetail from '@/pages/ClassroomDetail';
-import Settings      from '@/pages/Settings';
-import Leaderboard   from '@/pages/Leaderboard';
-import Notifications from '@/pages/Notifications';
-import Moderation    from '@/pages/Moderation';
-import AnalyseDetail from '@/pages/analyse/AnalyseDetail';
+import Settings       from '@/pages/Settings';
+import Leaderboard    from '@/pages/Leaderboard';
+import Notifications  from '@/pages/Notifications';
+import Moderation     from '@/pages/Moderation';
+import AnalyseDetail  from '@/pages/analyse/AnalyseDetail';
+import KeySheet       from '@/pages/student/KeySheet';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useApp();
@@ -36,12 +38,15 @@ function AppRoutes() {
   const { user } = useApp();
   return (
     <>
-      <Toaster position="top-right" richColors expand toastOptions={{ style:{ background:'#FEFAF5', border:'1px solid #E4CC94', fontFamily:'Inter, system-ui, sans-serif', borderRadius:'12px' }}}/>
+      <Toaster position="top-right" richColors expand
+        toastOptions={{ style:{ background:'#FEFAF5', border:'1px solid #E4CC94',
+          fontFamily:'Inter, system-ui, sans-serif', borderRadius:'12px' }}}/>
       <Routes>
         <Route path="/"        element={<Index />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/login"   element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
         <Route path="/signup"  element={user ? <Navigate to="/dashboard" replace /> : <Signup />} />
+
         <Route path="/dashboard"          element={<WithDashboard><Dashboard /></WithDashboard>} />
         <Route path="/create"             element={<WithDashboard><Create /></WithDashboard>} />
         <Route path="/create/:templateId" element={<WithDashboard><Create /></WithDashboard>} />
@@ -57,6 +62,8 @@ function AppRoutes() {
         <Route path="/settings"           element={<WithDashboard><Settings /></WithDashboard>} />
         <Route path="/present/:pollId"    element={<RequireAuth><Present /></RequireAuth>} />
         <Route path="/analyse/:pollId"    element={<WithDashboard><AnalyseDetail /></WithDashboard>} />
+        <Route path="/attempt/:id/keysheet" element={<WithDashboard><KeySheet /></WithDashboard>} />
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

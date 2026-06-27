@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, PlusCircle, BarChart3, Settings, LogOut,
   GraduationCap, Trophy, Layers, HelpCircle, ChevronLeft, ChevronDown,
@@ -17,36 +18,37 @@ interface NavChild { label:string; href:string; icon:LucideIcon }
 interface NavItem  { label:string; href:string; icon:LucideIcon; badge?:string|number; children?:NavChild[] }
 
 const NAV: NavItem[] = [
-  { label:'Dashboard',  href:'/dashboard',   icon:LayoutDashboard },
+  { label:'Dashboard',   href:'/dashboard',   icon:LayoutDashboard },
   {
-    label:'Polls',      href:'/dashboard',   icon:BarChart3,
+    label:'Polls',       href:'/dashboard',   icon:BarChart3,
     children:[
-      { label:'All Polls',    href:'/dashboard',   icon:FileText },
-      { label:'Create New',   href:'/create',       icon:PlusCircle },
-      { label:'Templates',    href:'/templates',    icon:Layers },
-      { label:'Live / Present',href:'/dashboard',  icon:Eye },
+      { label:'All Polls',      href:'/dashboard',         icon:FileText   },
+      { label:'Create Poll',    href:'/create',            icon:PlusCircle },
+      { label:'Templates',      href:'/templates',         icon:Layers     },
     ],
   },
   {
-    label:'Quizzes',    href:'/create?type=quiz', icon:BookOpen,
+    label:'Quizzes',     href:'/create?type=quiz', icon:BookOpen,
     children:[
-      { label:'New Quiz',     href:'/create?type=quiz',  icon:PlusCircle },
-      { label:'Quiz Results', href:'/analytics',          icon:BarChart2 },
-      { label:'Leaderboard',  href:'/leaderboard',        icon:Trophy },
+      { label:'New Quiz',       href:'/create?type=quiz',  icon:PlusCircle },
+      { label:'MCQ',            href:'/create?type=multiple_choice', icon:FileText },
+      { label:'True / False',   href:'/create?type=true_false',      icon:FileText },
+      { label:'Fill in Blank',  href:'/create?type=fill_blank',      icon:FileText },
+      { label:'Matching',       href:'/create?type=matching',        icon:FileText },
+      { label:'Analytics',      href:'/analytics',         icon:BarChart2  },
     ],
   },
   {
-    label:'Classrooms', href:'/classrooms',  icon:GraduationCap,
+    label:'Classrooms',  href:'/classrooms',  icon:GraduationCap,
     children:[
-      { label:'My Classrooms', href:'/classrooms',  icon:GraduationCap },
-      { label:'Students',      href:'/classrooms',  icon:Users },
-      { label:'Class Results', href:'/analytics',   icon:BarChart2 },
+      { label:'All Classrooms', href:'/classrooms',        icon:GraduationCap },
+      { label:'Class Results',  href:'/analytics',         icon:BarChart2     },
     ],
   },
-  { label:'Analytics',  href:'/analytics',   icon:BarChart3 },
-  { label:'Moderation', href:'/moderation',  icon:Shield, badge:'!' },
+  { label:'Analytics',   href:'/analytics',   icon:BarChart3 },
+  { label:'Moderation',  href:'/moderation',  icon:Shield },
   { label:'Notifications',href:'/notifications',icon:Bell },
-  { label:'Settings',   href:'/settings',    icon:Settings },
+  { label:'Settings',    href:'/settings',    icon:Settings },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -60,6 +62,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const initials   = user?.name?.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() ?? 'OP';
   const unread     = notifications.filter(n => !n.isRead).length;
+  const { data: alertData } = useQuery<any[]>({
+    queryKey: ['moderation-alerts-count'],
+    queryFn: async () => {
+      const res = await fetch('/api/moderation/alerts', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('op_token')||''}` }
+      });
+      const d = await res.json();
+      return (d.data ?? []).filter((a:any) => !a.isResolved);
+    },
+    refetchInterval: 20000,
+  });
+  const alertCount = alertData?.length ?? 0;
+
+  // Inject live badge into Moderation nav item
+  const NAV_LIVE = NAV.map(n => n.label === 'Moderation' ? { ...n, badge: alertCount > 0 ? alertCount : undefined } : n);
 
   const isActive = (href: string) =>
     location.pathname === href.split('?')[0] ||
@@ -85,7 +102,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Nav */}
       <nav className={cn('flex-1 py-2 overflow-y-auto scrollbar-thin', collapsed && !mobile ? 'px-2' : 'px-2')}>
-        {NAV.map(item => {
+        {NAV_LIVE.map(item => {
           const active   = isActive(item.href);
           const expanded = expandedNav.includes(item.label);
           const hasChildren = item.children && item.children.length > 0;

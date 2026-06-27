@@ -134,21 +134,31 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
   const toggleCorrect=(qi:number,oi:number)=>setQuestions(qs=>qs.map((q,j)=>j===qi?{...q,options:q.options.map((o,k)=>k===oi?{...o,isCorrect:!o.isCorrect}:o)}:q));
 
   const isQuiz    = ['quiz','multiple_choice','true_false','image_choice','fill_blank','matching'].includes(pollType);
-  const isMultiQ  = ['quiz','series'].includes(pollType);
+  const isMultiQ  = true; // ALL poll types support multiple questions
   const needsOpts = !['word_cloud','qa','nps','slider','heatmap','countdown','open_ended'].includes(pollType);
 
   const q = questions[activeQ] ?? questions[0];
+
+  // Per-question type helpers (use current question's own type)
+  const qType      = q?.type ?? pollType;
+  const qIsQuiz    = ['quiz','multiple_choice','true_false','image_choice','fill_blank','matching'].includes(qType);
+  const qNeedsOpts = !['word_cloud','qa','nps','slider','heatmap','countdown','open_ended'].includes(qType);
 
   const handleSubmit = async () => {
     if(!title.trim()){toast.error('Add a title');return;}
     if(questions.some(q=>!q.title.trim())){toast.error('All questions need titles');return;}
     setLoading(true);
     try {
-      const allOptions = questions[0]?.options?.filter(o=>o.text.trim())??[];
+      const cleanQuestions = questions.map(q=>({
+        ...q,
+        options: q.options.filter(o=>o.text.trim()),
+      }));
+      const allOptions = cleanQuestions[0]?.options ?? [];
       const payload = {
         title, description:desc, type:pollType,
-        questions:isMultiQ?questions.map(q=>({...q,options:q.options.filter(o=>o.text.trim())})):undefined,
-        options:allOptions, settings:{...settings,...extraSettings},
+        questions: cleanQuestions,
+        options: allOptions,
+        settings:{...settings,...extraSettings},
         classroomId:classroomId||undefined,
         matrixRows:pollType==='matrix'?q.matrixRows:undefined,
         matrixCols:pollType==='matrix'?q.matrixCols:undefined,
@@ -270,9 +280,18 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
 
               {/* Question editor */}
               <div className="op-card p-5 space-y-4">
+                {/* Question header with type selector */}
                 {isMultiQ&&(
                   <div className="flex items-center justify-between pb-2 border-b border-cream-200">
-                    <span className="text-sm font-bold text-slate-600">Q{activeQ+1} of {questions.length}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-600">Q{activeQ+1} of {questions.length}</span>
+                      <select value={qType} onChange={e=>updateQ(activeQ,{type:e.target.value as PollType})}
+                        className="text-xs border border-cream-300 rounded-lg px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-terracotta-200 cursor-pointer">
+                        {ALL_TYPES.map(t=>(
+                          <option key={t.type} value={t.type}>{t.icon} {t.label}</option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="flex gap-1.5">
                       <button onClick={()=>dupQ(activeQ)} title="Duplicate"
                         className="p-1.5 hover:bg-cream-200 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"><Copy size={13}/></button>
@@ -286,9 +305,9 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Question {isMultiQ?activeQ+1:''}</label>
                   <input value={q.title} onChange={e=>updateQ(activeQ,{title:e.target.value})}
-                    placeholder={pollType==='fill_blank'?'The capital of France is ___ (use ___ for blank)':'Enter your question *'}
+                    placeholder={qType==='fill_blank'?'The capital of France is ___ (use ___ for blank)':'Enter your question *'}
                     className="w-full px-3.5 py-2.5 border-2 border-cream-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-200 focus:border-terracotta-400 bg-white font-medium transition-all"/>
-                  {pollType==='fill_blank'&&(
+                  {qType==='fill_blank'&&(
                     <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1"><AlertTriangle size={11}/> Use ___ (3 underscores) to mark the blank</p>
                   )}
                 </div>
@@ -302,7 +321,7 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                       placeholder="∞"
                       className="w-20 px-2.5 py-1.5 border border-cream-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-terracotta-200 text-center"/>
                   </div>
-                  {isQuiz&&(
+                  {qIsQuiz&&(
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Points</label>
                       <input type="number" min={0} max={100} value={q.points??1}
@@ -327,12 +346,12 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                 {/* ── Type-specific content ── */}
 
                 {/* MCQ / Quiz / TF / Image */}
-                {needsOpts&&pollType!=='matrix'&&pollType!=='matching'&&(
+                {qNeedsOpts&&qType!=='matrix'&&qType!=='matching'&&(
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
                         <List size={12}/> Options
-                        {isQuiz&&<span className="text-slate-400 font-normal normal-case ml-1">— click ○ to mark correct</span>}
+                        {qIsQuiz&&<span className="text-slate-400 font-normal normal-case ml-1">— click ○ to mark correct</span>}
                       </label>
                       <span className="text-xs text-slate-400">{q.options.filter(o=>o.text).length} filled</span>
                     </div>
@@ -343,8 +362,8 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                         <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${opt.isCorrect?'bg-green-500 text-white':'bg-cream-200 text-slate-600'}`}>
                           {String.fromCharCode(65+oi)}
                         </span>
-                        {isQuiz&&(
-                          <button onClick={()=>['quiz','true_false'].includes(pollType)?setCorrect(activeQ,oi):toggleCorrect(activeQ,oi)}
+                        {qIsQuiz&&(
+                          <button onClick={()=>['quiz','true_false'].includes(qType)?setCorrect(activeQ,oi):toggleCorrect(activeQ,oi)}
                             className={`w-5 h-5 rounded-full border-2 flex-shrink-0 transition-all flex items-center justify-center ${opt.isCorrect?'bg-green-500 border-green-500':'border-slate-300 hover:border-green-400'}`}>
                             {opt.isCorrect&&<Check size={10} className="text-white"/>}
                           </button>
@@ -352,7 +371,7 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                         <input value={opt.text} onChange={e=>updateOpt(activeQ,oi,{text:e.target.value})}
                           placeholder={`Option ${String.fromCharCode(65+oi)}`}
                           className={`flex-1 text-sm focus:outline-none bg-transparent ${opt.isCorrect?'font-semibold text-green-800':'text-slate-700'}`}/>
-                        {isQuiz&&pollType==='quiz'&&(
+                        {qIsQuiz&&qType==='quiz'&&(
                           <input type="number" min={0} value={opt.points??0} onChange={e=>updateOpt(activeQ,oi,{points:Number(e.target.value)})}
                             placeholder="pts" className="w-14 text-xs text-center px-1.5 py-1 border border-cream-200 rounded-lg bg-white focus:outline-none"/>
                         )}
@@ -366,7 +385,7 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                       className="flex items-center gap-1.5 text-xs text-terracotta-600 hover:text-terracotta-700 font-semibold mt-1 px-1 py-1 hover:bg-terracotta-50 rounded-lg transition-colors">
                       <Plus size={13}/> Add Option
                     </button>
-                    {isQuiz&&q.options.some(o=>o.isCorrect)&&(
+                    {qIsQuiz&&q.options.some(o=>o.isCorrect)&&(
                       <div className="mt-2">
                         <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wide">Explanation (shown in key sheet)</label>
                         <input value={q.explanation??''} onChange={e=>updateQ(activeQ,{explanation:e.target.value})}
@@ -378,7 +397,7 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                 )}
 
                 {/* Matrix */}
-                {pollType==='matrix'&&(
+                {qType==='matrix'&&(
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-2 block">Rows (statements)</label>
@@ -412,7 +431,7 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                 )}
 
                 {/* Matching */}
-                {pollType==='matching'&&(
+                {qType==="matching"&&(
                   <div className="space-y-3">
                     <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block">Match Pairs</label>
                     {(q.matchPairs??[]).map((pair,i)=>(
@@ -431,7 +450,7 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                 )}
 
                 {/* Slider */}
-                {pollType==='slider'&&(
+                {qType==="slider"&&(
                   <div className="grid grid-cols-3 gap-3">
                     {[['Min',q.sliderMin??0,'sliderMin'],['Max',q.sliderMax??100,'sliderMax'],['Step',q.sliderStep??1,'sliderStep']].map(([label,val,key])=>(
                       <div key={String(key)}>
@@ -444,18 +463,18 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                 )}
 
                 {/* Open / Word Cloud */}
-                {['open_ended','word_cloud','qa'].includes(pollType)&&(
+                {['open_ended','word_cloud','qa'].includes(qType)&&(
                   <div className="p-3 bg-cream-50 border border-cream-200 rounded-xl text-sm text-slate-500 flex items-start gap-2">
                     <MessageSquare size={14} className="text-terracotta-400 flex-shrink-0 mt-0.5"/>
                     <div>
                       <p className="font-medium text-slate-700">Free-text response</p>
-                      <p className="text-xs mt-0.5">Students will type their answer. {pollType==='word_cloud'?'Responses appear in a live word cloud.':pollType==='qa'?'Questions can be upvoted.':'Responses are collected for analysis.'}</p>
+                      <p className="text-xs mt-0.5">Students will type their answer. {qType==='word_cloud'?'Responses appear in a live word cloud.':qType==='qa'?'Questions can be upvoted.':'Responses are collected for analysis.'}</p>
                     </div>
                   </div>
                 )}
 
                 {/* NPS */}
-                {pollType==='nps'&&(
+                {qType==="nps"&&(
                   <div className="p-3 bg-cream-50 border border-cream-200 rounded-xl">
                     <p className="text-sm font-medium text-slate-700 mb-2">NPS Scale Preview</p>
                     <div className="flex gap-1">

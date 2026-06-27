@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
   LayoutDashboard, LogOut, BookOpen, Trophy, GraduationCap,
   Bell, Settings, Home, HelpCircle, Menu, ChevronLeft,
-  ArrowRight, Zap, Star, Clock,
+  ArrowRight, Zap, Star, Clock, BarChart3,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
@@ -17,6 +17,7 @@ interface NavItem { label:string; href:string; icon:LucideIcon; badge?:string|nu
 const NAV: NavItem[] = [
   { label:'My Dashboard',  href:'/student/dashboard',  icon:LayoutDashboard },
   { label:'My Results',    href:'/student/results',     icon:BookOpen },
+  { label:'Analytics',     href:'/analytics',           icon:BarChart3 },
   { label:'Classrooms',    href:'/classrooms',          icon:GraduationCap },
   { label:'Leaderboard',   href:'/leaderboard',         icon:Trophy },
   { label:'Notifications', href:'/notifications',       icon:Bell },

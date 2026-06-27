@@ -74,6 +74,7 @@ async function ensureTables() {
         creator_id TEXT NOT NULL,
         classroom_id TEXT,
         options JSONB NOT NULL DEFAULT '[]',
+        questions JSONB DEFAULT '[]',
         matrix_rows JSONB NOT NULL DEFAULT '[]',
         matrix_cols JSONB NOT NULL DEFAULT '[]',
         settings JSONB NOT NULL DEFAULT '{}',
@@ -120,6 +121,7 @@ async function ensureTables() {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         description TEXT,
+        subject TEXT,
         code TEXT UNIQUE NOT NULL,
         teacher_id TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -160,7 +162,24 @@ async function ensureTables() {
         poll_id TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS tab_alerts (
+        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        poll_id TEXT NOT NULL,
+        student_name TEXT NOT NULL DEFAULT 'Anonymous',
+        student_email TEXT,
+        student_user_id TEXT,
+        switch_count INTEGER NOT NULL DEFAULT 1,
+        severity TEXT NOT NULL DEFAULT 'low',
+        classroom_name TEXT,
+        poll_title TEXT,
+        is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
     `);
+    // Add questions column if missing (for existing databases)
+    try { await db(`ALTER TABLE polls ADD COLUMN IF NOT EXISTS questions JSONB DEFAULT '[]'`); } catch {}
+    // Add subject to classrooms if missing
+    try { await db(`ALTER TABLE classrooms ADD COLUMN IF NOT EXISTS subject TEXT`); } catch {}
     _migrated = true;
     console.log('[OmniPoll] Tables verified ✓');
   } catch (e) {
@@ -350,7 +369,7 @@ app.post('/api/polls', async (req, res) => {
   const u = await auth(req, res);
   if (!u) return;
   try {
-    const { title, description, type, options = [], matrixRows, matrixCols, settings = {}, classroomId } = req.body;
+    const { title, description, type, options = [], questions = [], matrixRows, matrixCols, settings = {}, classroomId } = req.body;
     if (!title || !type) return err(res, 400, 'Title and type required');
     let code;
     for (let i = 0; i < 5; i++) {
@@ -367,10 +386,11 @@ app.post('/api/polls', async (req, res) => {
     };
     const merged = { ...defaultSettings, ...settings };
     await db(
-      `INSERT INTO polls (id,code,title,description,type,status,creator_id,options,matrix_rows,matrix_cols,settings,classroom_id)
-       VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9,$10,$11)`,
+      `INSERT INTO polls (id,code,title,description,type,status,creator_id,options,questions,matrix_rows,matrix_cols,settings,classroom_id)
+       VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9,$10,$11,$12)`,
       [id, code, title.trim(), description||null, type, u.id,
-       JSON.stringify(options), JSON.stringify(matrixRows||[]), JSON.stringify(matrixCols||[]),
+       JSON.stringify(options), JSON.stringify(questions),
+       JSON.stringify(matrixRows||[]), JSON.stringify(matrixCols||[]),
        JSON.stringify(merged), classroomId||null]
     );
     const r = await db('SELECT * FROM polls WHERE id=$1', [id]);
@@ -385,14 +405,16 @@ app.put('/api/polls/:id', async (req, res) => {
   try {
     const r = await db('SELECT * FROM polls WHERE id=$1 AND creator_id=$2', [req.params.id, u.id]);
     if (!r.rows[0]) return err(res, 404, 'Poll not found');
-    const { title, description, options, matrixRows, matrixCols, settings, classroomId } = req.body;
+    const { title, description, options, questions, matrixRows, matrixCols, settings, classroomId } = req.body;
     await db(
       `UPDATE polls SET title=COALESCE($1,title), description=COALESCE($2,description),
-       options=COALESCE($3,options), matrix_rows=COALESCE($4,matrix_rows),
-       matrix_cols=COALESCE($5,matrix_cols), settings=COALESCE($6,settings),
-       classroom_id=COALESCE($7,classroom_id), updated_at=NOW() WHERE id=$8`,
+       options=COALESCE($3,options), questions=COALESCE($4,questions),
+       matrix_rows=COALESCE($5,matrix_rows),
+       matrix_cols=COALESCE($6,matrix_cols), settings=COALESCE($7,settings),
+       classroom_id=COALESCE($8,classroom_id), updated_at=NOW() WHERE id=$9`,
       [title||null, description||null,
        options?JSON.stringify(options):null,
+       questions?JSON.stringify(questions):null,
        matrixRows?JSON.stringify(matrixRows):null,
        matrixCols?JSON.stringify(matrixCols):null,
        settings?JSON.stringify(settings):null,
@@ -871,7 +893,10 @@ app.get('/api/classrooms', async (req, res) => {
     }
     ok(res, r.rows.map(c => ({
       id:c.id, name:c.name, description:c.description, code:c.code,
+      inviteCode: c.code,            // alias for UI
+      subject: c.subject ?? null,
       teacherId:c.teacher_id, studentCount:c.student_count, pollCount:c.poll_count,
+      avgScore: c.avg_score ?? null,
       createdAt:c.created_at,
     })));
   } catch (e) { err(res, 500, e.message); }
@@ -890,7 +915,8 @@ app.get('/api/classrooms/:id', async (req, res) => {
     );
     if (!r.rows[0]) return err(res, 404, 'Classroom not found');
     const c = r.rows[0];
-    ok(res, { id:c.id, name:c.name, description:c.description, code:c.code,
+    ok(res, { id:c.id, name:c.name, description:c.description, subject:c.subject??null,
+      code:c.code, inviteCode:c.code,
       teacherId:c.teacher_id, studentCount:c.student_count, pollCount:c.poll_count, createdAt:c.created_at });
   } catch (e) { err(res, 500, e.message); }
 });
@@ -899,13 +925,13 @@ app.post('/api/classrooms', async (req, res) => {
   const u = await auth(req, res);
   if (!u) return;
   try {
-    const { name, description } = req.body;
+    const { name, description, subject } = req.body;
     if (!name) return err(res, 400, 'Name required');
     const id = uid(); let code;
     for(let i=0;i<5;i++){ code=genCode(6); const c=await db('SELECT id FROM classrooms WHERE code=$1',[code]); if(!c.rows[0])break; }
-    await db('INSERT INTO classrooms (id,name,description,code,teacher_id) VALUES ($1,$2,$3,$4,$5)',
-      [id, name.trim(), description||null, code, u.id]);
-    ok(res, { id, name, description, code, teacherId:u.id, studentCount:0, pollCount:0, createdAt:new Date() });
+    await db('INSERT INTO classrooms (id,name,description,subject,code,teacher_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [id, name.trim(), description||null, subject||null, code, u.id]);
+    ok(res, { id, name, description, subject:subject||null, code, inviteCode:code, teacherId:u.id, studentCount:0, pollCount:0, createdAt:new Date() });
   } catch (e) { err(res, 500, e.message); }
 });
 
@@ -1335,6 +1361,93 @@ app.post('/api/attempts/:id/email-result', async (req, res) => {
   } catch (e) { err(res, 500, e.message); }
 });
 
+// ── Tab switch alert from student ─────────────────────────────────────────────
+app.post('/api/polls/:id/tab-switch', async (req, res) => {
+  // Optional auth (guest or logged-in student)
+  let u = null;
+  try { u = await auth(req, res, true); } catch {}
+  try {
+    const { studentName, studentEmail, switchCount=1, severity='low', pollTitle } = req.body;
+    const alertId = uid();
+    // Get poll creator to notify
+    const pR = await db('SELECT creator_id, title FROM polls WHERE id=$1', [req.params.id]);
+    const poll = pR.rows[0];
+    if (!poll) return err(res, 404, 'Poll not found');
+    // Store alert
+    await db(
+      `INSERT INTO tab_alerts (id,poll_id,student_name,student_email,student_user_id,switch_count,severity,poll_title)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT DO NOTHING`,
+      [alertId, req.params.id, studentName||u?.name||'Guest', studentEmail||u?.email||null,
+       u?.id||null, switchCount, severity, pollTitle||poll.title]
+    );
+    // Real-time push to teacher's moderation page
+    await push(`poll-${req.params.id}`, 'tab-switch', {
+      studentName: studentName||u?.name||'Guest',
+      studentEmail: studentEmail||u?.email,
+      switchCount, severity, pollTitle: poll.title, alertId,
+    });
+    // Push notification to teacher
+    const notifId = uid();
+    await db(
+      `INSERT INTO notifications (id,user_id,type,title,message,link,data)
+       VALUES ($1,$2,'tab_switch',$3,$4,$5,$6)`,
+      [notifId, poll.creator_id,
+       `⚠️ Tab Switch Detected`,
+       `${studentName||'A student'} switched tabs ${switchCount} time(s) — severity: ${severity}`,
+       `/moderation`, JSON.stringify({ pollId: req.params.id, studentName, switchCount, severity })]
+    );
+    ok(res, { message: 'Alert recorded' });
+  } catch (e) { err(res, 500, e.message); }
+});
+
+// ── Get tab alerts for a poll (teacher only) ──────────────────────────────────
+app.get('/api/polls/:id/tab-alerts', async (req, res) => {
+  const u = await auth(req, res);
+  if (!u) return;
+  try {
+    const r = await db(
+      `SELECT * FROM tab_alerts WHERE poll_id=$1 ORDER BY created_at DESC LIMIT 100`,
+      [req.params.id]
+    );
+    ok(res, r.rows.map(a => ({
+      id: a.id, studentName: a.student_name, studentEmail: a.student_email,
+      switchCount: a.switch_count, severity: a.severity, pollTitle: a.poll_title,
+      isResolved: a.is_resolved, createdAt: a.created_at,
+    })));
+  } catch (e) { err(res, 500, e.message); }
+});
+
+// ── Resolve tab alert ─────────────────────────────────────────────────────────
+app.patch('/api/tab-alerts/:id/resolve', async (req, res) => {
+  const u = await auth(req, res);
+  if (!u) return;
+  try {
+    await db('UPDATE tab_alerts SET is_resolved=true WHERE id=$1', [req.params.id]);
+    ok(res, { message: 'Resolved' });
+  } catch (e) { err(res, 500, e.message); }
+});
+
+// ── All tab alerts across all polls (moderation dashboard) ───────────────────
+app.get('/api/moderation/alerts', async (req, res) => {
+  const u = await auth(req, res);
+  if (!u) return;
+  try {
+    const r = await db(
+      `SELECT ta.*, p.title as poll_title_from_poll FROM tab_alerts ta
+       JOIN polls p ON p.id=ta.poll_id
+       WHERE p.creator_id=$1 ORDER BY ta.created_at DESC LIMIT 200`,
+      [u.id]
+    );
+    ok(res, r.rows.map(a => ({
+      id: a.id, pollId: a.poll_id, studentName: a.student_name, studentEmail: a.student_email,
+      switchCount: a.switch_count, severity: a.severity,
+      pollTitle: a.poll_title || a.poll_title_from_poll,
+      isResolved: a.is_resolved, createdAt: a.created_at,
+    })));
+  } catch (e) { err(res, 500, e.message); }
+});
+
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (_, res) => res.json({ status:'ok', ts: new Date().toISOString() }));
 
@@ -1345,6 +1458,7 @@ function formatPoll(p) {
     id:p.id, code:p.code, title:p.title, description:p.description,
     type:p.type, status:p.status, creatorId:p.creator_id,
     options: typeof p.options==='string'?JSON.parse(p.options):p.options||[],
+    questions: typeof p.questions==='string'?JSON.parse(p.questions||'[]'):p.questions||[],
     matrixRows: typeof p.matrix_rows==='string'?JSON.parse(p.matrix_rows):p.matrix_rows||[],
     matrixCols: typeof p.matrix_cols==='string'?JSON.parse(p.matrix_cols):p.matrix_cols||[],
     settings: typeof p.settings==='string'?JSON.parse(p.settings):p.settings||{},

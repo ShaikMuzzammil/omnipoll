@@ -1,180 +1,259 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Users, BookOpen, BarChart3, Trash2, UserMinus, ArrowLeft } from 'lucide-react';
-import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
+import { motion } from 'framer-motion';
+import {
+  Loader2, Users, BookOpen, BarChart3, ArrowLeft, ArrowRight,
+  Trophy, Clock, CheckCircle, Play, Lock, ExternalLink,
+} from 'lucide-react';
 import { classroomsApi } from '@/lib/api';
-import { formatDate, scoreColor } from '@/lib/utils';
-import type { Classroom, User, Poll, Attempt } from '@/lib/types';
+import { useApp } from '@/context/AppContext';
+import { formatDate, formatDuration, scoreColor, scoreLabel, pollTypeIcon, pollTypeLabel } from '@/lib/utils';
+import type { Classroom, Poll, Attempt } from '@/lib/types';
+
+const LEARN = import.meta.env.VITE_HOST_APP_URL ?? '';
 
 export default function ClassroomDetail() {
   const { id } = useParams<{ id: string }>();
-  const qc = useQueryClient();
-  const [tab, setTab] = useState<'students'|'polls'|'results'>('students');
+  const { user } = useApp();
+  const [tab, setTab] = useState<'polls'|'results'>('polls');
 
   const { data: classroom, isLoading } = useQuery<Classroom>({
     queryKey: ['classroom', id],
     queryFn: () => classroomsApi.get(id!) as Promise<Classroom>,
   });
-  const { data: students = [] } = useQuery<User[]>({
-    queryKey: ['classroom-students', id],
-    queryFn: () => classroomsApi.students(id!) as Promise<User[]>,
-    enabled: tab === 'students',
-  });
+
   const { data: polls = [] } = useQuery<Poll[]>({
     queryKey: ['classroom-polls', id],
     queryFn: () => classroomsApi.polls(id!) as Promise<Poll[]>,
-    enabled: tab === 'polls',
+    enabled: !!id,
+    refetchInterval: 10000,
   });
+
   const { data: results = [] } = useQuery<Attempt[]>({
     queryKey: ['classroom-results', id],
     queryFn: () => classroomsApi.results(id!) as Promise<Attempt[]>,
-    enabled: tab === 'results',
-  });
-
-  const removeMut = useMutation({
-    mutationFn: (userId: string) => classroomsApi.remove(id!, userId),
-    onSuccess: () => { qc.invalidateQueries({ queryKey:['classroom-students', id] }); toast.success('Student removed'); },
-    onError: (e:Error) => toast.error(e.message),
+    enabled: tab === 'results' && !!id,
   });
 
   if (isLoading || !classroom) return (
-    <div className="flex items-center justify-center py-24"><Loader2 size={28} className="animate-spin text-terracotta-400"/></div>
+    <div className="flex items-center justify-center py-24">
+      <Loader2 size={28} className="animate-spin text-terracotta-400"/>
+    </div>
   );
+
+  const myResults = results.filter(r => (r as any).userId === user?.id || (r as any).user_id === user?.id);
+  const activePolls = polls.filter(p => p.status === 'active');
+  const donePolls   = polls.filter(p => p.status === 'closed' || p.status === 'results_released');
+  const draftPolls  = polls.filter(p => p.status === 'draft');
 
   return (
     <div className="space-y-6 page-enter">
+      {/* Header */}
       <div>
         <Link to="/classrooms" className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-terracotta-600 mb-3 transition-colors">
-          <ArrowLeft size={14}/> Back to Classrooms
+          <ArrowLeft size={14}/> My Classrooms
         </Link>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="font-display text-2xl font-bold text-slate-800">{classroom.name}</h1>
             {classroom.description && <p className="text-sm text-slate-500 mt-0.5">{classroom.description}</p>}
           </div>
-          <div className="flex items-center gap-3 text-sm text-slate-500">
-            <span className="flex items-center gap-1.5 bg-cream-200 px-3 py-1.5 rounded-xl">
-              <Users size={13}/> {classroom.studentCount} students
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            <span className="flex items-center gap-1.5 bg-cream-200 px-3 py-1.5 rounded-xl text-slate-600 font-medium">
+              <Users size={12}/> {classroom.studentCount ?? '—'} students
             </span>
-            <span className="flex items-center gap-1.5 bg-cream-200 px-3 py-1.5 rounded-xl">
-              <BookOpen size={13}/> {classroom.pollCount} polls
+            <span className="flex items-center gap-1.5 bg-cream-200 px-3 py-1.5 rounded-xl text-slate-600 font-medium">
+              <BookOpen size={12}/> {polls.length} polls
             </span>
+            {activePolls.length > 0 && (
+              <span className="flex items-center gap-1.5 bg-green-100 border border-green-200 px-3 py-1.5 rounded-xl text-green-700 font-bold">
+                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"/>
+                {activePolls.length} Live Now
+              </span>
+            )}
           </div>
         </div>
       </div>
 
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: 'Total Polls',  value: polls.length, icon: BookOpen, color: 'text-terracotta-600', bg: 'bg-terracotta-100' },
+          { label: 'My Attempts', value: myResults.length, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100' },
+          { label: 'Avg Score',   value: myResults.length ? `${Math.round(myResults.reduce((s,r)=>s+(r.percentage??0),0)/myResults.length)}%` : '—', icon: Trophy, color: 'text-purple-600', bg: 'bg-purple-100' },
+        ].map(s => (
+          <div key={s.label} className="bg-white border border-cream-200 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-slate-500">{s.label}</span>
+              <div className={`w-7 h-7 ${s.bg} rounded-xl flex items-center justify-center`}>
+                <s.icon size={13} className={s.color}/>
+              </div>
+            </div>
+            <span className={`text-2xl font-display font-bold ${s.color}`}>{s.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
       <div className="flex gap-1 bg-cream-200 p-1 rounded-xl w-fit">
-        {(['students','polls','results'] as const).map(t => (
+        {([['polls','📊 Polls'],['results','🏆 My Results']] as const).map(([t,l]) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium capitalize transition-all ${tab === t ? 'bg-white shadow-sm text-terracotta-700' : 'text-slate-500'}`}>
-            {t === 'students' ? `👥 Students (${students.length || classroom.studentCount})` : t === 'polls' ? `📊 Polls` : '🏆 Results'}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${tab===t ? 'bg-white shadow-sm text-terracotta-700' : 'text-slate-500 hover:text-slate-700'}`}>
+            {l}
           </button>
         ))}
       </div>
 
-      {tab === 'students' && (
-        <div className="op-card overflow-hidden">
-          {students.length === 0 ? (
-            <div className="text-center py-12 text-slate-400">
-              <Users size={32} className="mx-auto mb-3 opacity-40"/>
-              <p>No students yet. Share code <strong className="text-terracotta-600">{classroom.code}</strong></p>
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-cream-100 border-b border-cream-200">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">Student</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">Email</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">Joined</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {students.map((s, i) => (
-                  <tr key={s.id} className={i % 2 === 0 ? 'bg-white' : 'bg-cream-50'}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 bg-terracotta-100 rounded-full flex items-center justify-center text-xs font-bold text-terracotta-700">
-                          {s.name.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="font-medium text-slate-800">{s.name}</span>
+      {/* Polls tab */}
+      {tab === 'polls' && (
+        <div className="space-y-4">
+          {/* Live polls first */}
+          {activePolls.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold text-green-700 flex items-center gap-2 mb-2">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"/> Live Now
+              </h3>
+              <div className="space-y-2.5">
+                {activePolls.map((p, i) => (
+                  <motion.div key={p.id} initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
+                    className="op-card p-4 flex items-center gap-4 border-green-200 bg-gradient-to-r from-green-50/60 to-white hover:border-green-300 transition-all">
+                    <div className="w-11 h-11 bg-green-100 rounded-xl flex items-center justify-center text-xl flex-shrink-0">
+                      {pollTypeIcon(p.type)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold border border-green-200">● LIVE</span>
+                        <span className="text-xs text-slate-400">{pollTypeLabel(p.type)}</span>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500">{s.email}</td>
-                    <td className="px-4 py-3 text-slate-400">{formatDate(s.createdAt)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => removeMut.mutate(s.id)} className="p-1.5 hover:bg-red-100 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
-                        <UserMinus size={13}/>
-                      </button>
-                    </td>
-                  </tr>
+                      <p className="font-display font-semibold text-slate-800 truncate">{p.title}</p>
+                      {p.description && <p className="text-xs text-slate-400 truncate mt-0.5">{p.description}</p>}
+                    </div>
+                    <Link to={`/join/${p.code}`}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl text-sm font-bold transition-all shadow-sm flex-shrink-0">
+                      <Play size={13}/> Join Now
+                    </Link>
+                  </motion.div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
+          )}
+
+          {/* Upcoming/draft polls */}
+          {draftPolls.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold text-slate-500 flex items-center gap-2 mb-2">
+                <Clock size={13}/> Upcoming
+              </h3>
+              <div className="space-y-2">
+                {draftPolls.map((p, i) => (
+                  <motion.div key={p.id} initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
+                    className="op-card p-4 flex items-center gap-4 opacity-70">
+                    <div className="w-11 h-11 bg-slate-100 rounded-xl flex items-center justify-center text-xl flex-shrink-0">
+                      {pollTypeIcon(p.type)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs text-slate-400 font-medium">Not started yet</span>
+                      <p className="font-semibold text-slate-700 truncate">{p.title}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-400 rounded-xl text-sm font-medium flex-shrink-0 cursor-not-allowed">
+                      <Lock size={12}/> Pending
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Completed polls */}
+          {donePolls.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold text-slate-500 flex items-center gap-2 mb-2">
+                <CheckCircle size={13}/> Completed
+              </h3>
+              <div className="space-y-2">
+                {donePolls.map((p, i) => {
+                  const myAttempt = myResults.find(r => (r as any).pollId === p.id || (r as any).poll_id === p.id);
+                  return (
+                    <motion.div key={p.id} initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
+                      className="op-card p-4 flex items-center gap-4">
+                      <div className="w-11 h-11 bg-terracotta-50 rounded-xl flex items-center justify-center text-xl flex-shrink-0">
+                        {pollTypeIcon(p.type)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-xs text-slate-400">{pollTypeLabel(p.type)}</span>
+                          {p.status === 'results_released' && <span className="text-xs text-purple-600 font-bold">🔓 Results Released</span>}
+                        </div>
+                        <p className="font-semibold text-slate-800 truncate">{p.title}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {myAttempt ? (
+                          <div className="text-right">
+                            <p className={`font-bold text-lg ${scoreColor(myAttempt.percentage??0)}`}>{(myAttempt.percentage??0).toFixed(0)}%</p>
+                            <p className="text-xs text-slate-400">{scoreLabel(myAttempt.percentage??0)}</p>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-xl">Not attempted</span>
+                        )}
+                        {myAttempt && (
+                          <Link to={`/attempt/${myAttempt.id}/keysheet`}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-terracotta-50 text-terracotta-600 rounded-xl text-xs font-semibold hover:bg-terracotta-100 transition-colors">
+                            <ExternalLink size={11}/> Key Sheet
+                          </Link>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {polls.length === 0 && (
+            <div className="text-center py-16 bg-white border border-cream-200 rounded-2xl">
+              <div className="text-4xl mb-3">📋</div>
+              <p className="font-semibold text-slate-600 mb-1">No polls yet</p>
+              <p className="text-sm text-slate-400">Your teacher hasn't added any polls to this classroom yet.</p>
+            </div>
           )}
         </div>
       )}
 
-      {tab === 'polls' && (
-        <div className="space-y-3">
-          {polls.length === 0 ? (
-            <div className="text-center py-12 bg-white/60 border border-cream-300 rounded-2xl text-slate-400">
-              <BookOpen size={32} className="mx-auto mb-3 opacity-40"/>
-              <p>No polls in this classroom yet</p>
-              <Link to="/create" className="mt-3 inline-flex items-center gap-1.5 text-sm text-terracotta-600 font-medium">Create a poll →</Link>
-            </div>
-          ) : polls.map((poll, i) => (
-            <div key={poll.id} className="op-card p-4 flex items-center gap-4">
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-slate-800 truncate">{poll.title}</p>
-                <p className="text-xs text-slate-500">{poll.uniqueParticipants} participants · {formatDate(poll.createdAt)}</p>
-              </div>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${poll.status === 'active' ? 'badge-live' : 'badge-closed'}`}>
-                {poll.status}
-              </span>
-              <Link to={`/results/${poll.id}`} className="text-xs text-terracotta-600 hover:text-terracotta-700 font-medium flex items-center gap-1">
-                <BarChart3 size={12}/> Results
-              </Link>
-            </div>
-          ))}
-        </div>
-      )}
-
+      {/* My Results tab */}
       {tab === 'results' && (
-        <div className="op-card overflow-hidden">
-          {results.length === 0 ? (
-            <div className="text-center py-12 text-slate-400">No results yet</div>
+        <div className="space-y-3">
+          {myResults.length === 0 ? (
+            <div className="text-center py-16 bg-white border border-cream-200 rounded-2xl">
+              <div className="text-4xl mb-3">🏆</div>
+              <p className="font-semibold text-slate-600 mb-1">No results yet</p>
+              <p className="text-sm text-slate-400">Join a live poll to see your results here.</p>
+            </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-cream-100 border-b border-cream-200">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">Student</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">Poll</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">Score</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">Submitted</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((a, i) => (
-                  <tr key={a.id} className={i % 2 === 0 ? 'bg-white' : 'bg-cream-50'}>
-                    <td className="px-4 py-3 font-medium text-slate-800">{a.user?.name ?? a.guestName ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-600 truncate max-w-[160px]">{a.poll?.title ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      {a.percentage !== undefined
-                        ? <span className={`font-bold ${scoreColor(a.percentage)}`}>{a.percentage.toFixed(0)}%</span>
-                        : <span className="text-slate-400">—</span>
-                      }
-                    </td>
-                    <td className="px-4 py-3 text-slate-400">{a.submittedAt ? formatDate(a.submittedAt) : '—'}</td>
-                    <td className="px-4 py-3">
-                      <Link to={`/attempt/${a.id}/keysheet`} className="text-xs text-terracotta-600 hover:text-terracotta-700 font-medium">Key Sheet</Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            myResults.map((r, i) => (
+              <motion.div key={r.id} initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
+                className="op-card p-4 flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-slate-800">{(r as any).poll?.title ?? 'Quiz'}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {r.submittedAt ? formatDate(r.submittedAt) : 'In progress'}
+                    {r.timeTaken ? ` · ${formatDuration(r.timeTaken)}` : ''}
+                  </p>
+                </div>
+                {r.percentage != null && (
+                  <div className="text-right flex-shrink-0">
+                    <p className={`font-bold text-xl ${scoreColor(r.percentage)}`}>{r.percentage.toFixed(0)}%</p>
+                    <p className="text-xs text-slate-400">{r.score}/{r.maxScore} pts</p>
+                  </div>
+                )}
+                {r.status === 'submitted' && (
+                  <Link to={`/attempt/${r.id}/keysheet`}
+                    className="flex-shrink-0 text-xs text-terracotta-600 font-semibold px-3 py-1.5 bg-terracotta-50 rounded-xl hover:bg-terracotta-100 transition-colors">
+                    Key Sheet →
+                  </Link>
+                )}
+              </motion.div>
+            ))
           )}
         </div>
       )}

@@ -123,11 +123,14 @@ export interface Classroom {
   name: string;
   description?: string;
   code: string;
+  inviteCode: string;
+  subject?: string;
   teacherId: string;
   teacher?: User;
   students?: User[];
   studentCount: number;
   pollCount: number;
+  avgScore?: number;
   createdAt: string;
 }
 

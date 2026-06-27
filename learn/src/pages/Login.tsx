@@ -7,7 +7,6 @@ import { authApi } from '@/lib/api';
 import { useApp } from '@/context/AppContext';
 import type { User } from '@/lib/types';
 
-const HOST = import.meta.env.VITE_HOST_APP_URL ?? 'https://omnipoll-host.vercel.app';
 
 export default function Login() {
   const { login } = useApp();
@@ -109,9 +108,6 @@ export default function Login() {
 
           <p className="text-center text-sm text-slate-500 mt-5">
             No account? <Link to="/signup" className="text-terracotta-600 hover:text-terracotta-700 font-semibold">Sign up free</Link>
-          </p>
-          <p className="text-center text-xs text-slate-400 mt-2">
-            Teacher? <a href={HOST} className="text-terracotta-500 hover:underline font-medium">Go to Host Portal →</a>
           </p>
         </div>
 

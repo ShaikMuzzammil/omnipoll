@@ -19,9 +19,11 @@ import StudentDashboard from '@/pages/student/StudentDashboard';
 import StudentResults   from '@/pages/student/StudentResults';
 import KeySheet         from '@/pages/student/KeySheet';
 import Classrooms       from '@/pages/Classrooms';
+import ClassroomDetail  from '@/pages/ClassroomDetail';
 import Leaderboard      from '@/pages/Leaderboard';
 import Notifications    from '@/pages/Notifications';
 import Settings         from '@/pages/Settings';
+import Analytics        from '@/pages/Analytics';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useApp();
@@ -30,7 +32,6 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!user)   return <Navigate to="/login" state={{ from: location }} replace />;
   return <>{children}</>;
 }
-
 function WithDashboard({ children }: { children: React.ReactNode }) {
   return <RequireAuth><DashboardLayout>{children}</DashboardLayout></RequireAuth>;
 }
@@ -38,11 +39,11 @@ function WithDashboard({ children }: { children: React.ReactNode }) {
 function AppRoutes() {
   const { user } = useApp();
   const dash = '/student/dashboard';
-
   return (
     <>
       <Toaster position="top-right" richColors expand
-        toastOptions={{ style:{ background:'#FEFAF5', border:'1px solid #E4CC94', fontFamily:'Inter, system-ui, sans-serif', borderRadius:'12px' }}}/>
+        toastOptions={{ style:{ background:'#FEFAF5', border:'1px solid #E4CC94',
+          fontFamily:'Inter, system-ui, sans-serif', borderRadius:'12px' }}}/>
       <Routes>
         {/* Public */}
         <Route path="/"        element={<Index />} />
@@ -60,18 +61,18 @@ function AppRoutes() {
         <Route path="/student/results"      element={<WithDashboard><StudentResults /></WithDashboard>} />
         <Route path="/attempt/:id/keysheet" element={<RequireAuth><KeySheet /></RequireAuth>} />
         <Route path="/classrooms"           element={<WithDashboard><Classrooms /></WithDashboard>} />
+        <Route path="/classrooms/:id"       element={<WithDashboard><ClassroomDetail /></WithDashboard>} />
         <Route path="/leaderboard"          element={<WithDashboard><Leaderboard /></WithDashboard>} />
         <Route path="/notifications"        element={<WithDashboard><Notifications /></WithDashboard>} />
         <Route path="/settings"             element={<WithDashboard><Settings /></WithDashboard>} />
+        <Route path="/analytics"            element={<WithDashboard><Analytics /></WithDashboard>} />
 
-        {/* Redirect teacher routes to student dashboard */}
         <Route path="/dashboard" element={<Navigate to={dash} replace />} />
         <Route path="*"          element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );
 }
-
 export default function App() {
   return <ErrorBoundary><AppProvider><AppRoutes /></AppProvider></ErrorBoundary>;
 }

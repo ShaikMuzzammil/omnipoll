@@ -1,211 +1,135 @@
-# OmniPoll v4 — GODMODE Monorepo
+# OmniPoll v5 — GODMODE 🎓
 
-> **Two-app architecture** — Teacher host portal + Student learn portal sharing one Neon PostgreSQL database and Pusher Channels real-time layer.
+> **Two-app monorepo educational polling platform.**
+> HOST (teacher portal) · LEARN (student portal) · Shared Neon PostgreSQL + Pusher
+
+---
+
+## What's Fixed & Added in v5
+
+| Area | Change |
+|---|---|
+| **Quiz Builder** | ALL 20 poll types support multiple questions. Per-question type selector. Options work for every type. `questions[]` stored in DB. |
+| **Tab Detection** | `POST /api/polls/:id/tab-switch` fires on every tab change → real-time Pusher event to teacher + notification in DB. |
+| **Moderation** | Live alert feed with severity badges (low/medium/🚨high), resolve button, email student, unresolved count badge in sidebar. |
+| **Student Portal** | Removed all teacher references from Login. Clean student-only sidebar. StudentDashboard with quick join + classroom cards + recent results. |
+| **ClassroomDetail HOST** | 3 tabs: Students (roster + email + remove), Polls (launch/stop/results), Results (per-attempt score + key sheet). |
+| **ClassroomDetail LEARN** | Live polls first, upcoming/completed polls, My Results tab with score bars. |
+| **Classrooms HOST** | Full create with name/subject/description, invite code display, delete, animated grid. |
+| **API** | `questions` JSONB column added. `ALTER TABLE … ADD COLUMN IF NOT EXISTS` auto-migrates existing DBs. |
+
+---
+
+## Architecture
 
 ```
-omnipoll-v4/
-├── host/          ← Teacher portal (create, present, moderate, analyse)
-├── learn/         ← Student portal (join, take quizzes, view results)
-└── README.md      ← This file
+omnipoll-v5/
+├── host/      ← Teacher portal (omnipoll-host.vercel.app)
+│   ├── src/
+│   ├── api/index.js   ← 50+ endpoints
+│   └── vercel.json
+├── learn/     ← Student portal (omnipoll-learn.vercel.app)
+│   ├── src/
+│   ├── api/index.js   ← Same API, same DB
+│   └── vercel.json
+└── README.md
 ```
 
 ---
 
-## 🏗️ Architecture
+## Deploy (Two Vercel Projects, One Database)
 
-```
-┌─────────────────────────────┐     ┌─────────────────────────────┐
-│   OmniPoll HOST             │     │   OmniPoll LEARN            │
-│   omnipoll-host.vercel.app  │     │   omnipoll-learn.vercel.app │
-│                             │     │                             │
-│  • Create polls & quizzes   │     │  • Join via code/QR         │
-│  • 20 poll types wizard     │     │  • Pre-quiz guide screen    │
-│  • Fullscreen presenter     │     │  • Tab-switch detection     │
-│  • Live QR sharing          │     │  • Multi-question nav       │
-│  • Moderation panel         │     │  • Submit & see score       │
-│  • Tab-switch alerts        │     │  • Detailed key sheets      │
-│  • Deep analytics           │     │  • Progress tracking        │
-│  • Classroom management     │     │  • Leaderboard              │
-│  • Results release          │     │  • My classrooms            │
-└──────────┬──────────────────┘     └──────────┬──────────────────┘
-           │                                   │
-           └─────────────┬─────────────────────┘
-                         │  Shared Infrastructure
-                  ┌──────┴──────────────────────┐
-                  │  Neon PostgreSQL             │
-                  │  Pusher Channels (real-time) │
-                  │  JWT Auth (same secret)      │
-                  │  Express Serverless API      │
-                  └─────────────────────────────┘
-```
+### Step 1 — Run DB migration once
 
----
-
-## 🚀 Deploy Both Apps to Vercel
-
-### Step 1 — Set up shared infrastructure once
-
-**Neon DB:** neon.tech → Create project → Copy connection string
-
-**Pusher:** pusher.com → Create Channels app (cluster: ap2) → Copy keys
-
-**JWT Secret:** Run `openssl rand -base64 32`
-
-**Run migration (one time):**
 ```bash
 cd host
 DATABASE_URL="postgresql://..." node scripts/migrate.cjs
 ```
 
----
-
-### Step 2 — Deploy HOST (Teacher Portal)
+### Step 2 — Deploy HOST
 
 ```bash
 cd host
-git init
-git add .
-git commit -m "OmniPoll HOST v4"
+git init && git add . && git commit -m "OmniPoll v5 HOST"
 git remote add origin https://github.com/ShaikMuzzammil/omnipoll-host.git
 git push -u origin main
 ```
 
-**Vercel → New Project → omnipoll-host → Add env vars:**
+Vercel → New Project → omnipoll-host → **9 env vars** → Deploy
 
-| Variable | Value |
-|---|---|
-| `DATABASE_URL` | `postgresql://...neon.tech/neondb?sslmode=require` |
-| `JWT_SECRET` | your 32+ char secret |
-| `PUSHER_APP_ID` | from pusher.com |
-| `PUSHER_KEY` | from pusher.com |
-| `PUSHER_SECRET` | from pusher.com |
-| `PUSHER_CLUSTER` | `ap2` |
-| `VITE_PUSHER_KEY` | same as PUSHER_KEY |
-| `VITE_PUSHER_CLUSTER` | `ap2` |
-| `VITE_STUDENT_APP_URL` | `https://omnipoll-learn.vercel.app` |
-
-**Vercel settings:**
-- Framework: `Vite`
-- Build: `npm run build`
-- Output: `dist`
-- Install: `npm install && cd api && npm install`
-
----
-
-### Step 3 — Deploy LEARN (Student Portal)
+### Step 3 — Deploy LEARN
 
 ```bash
 cd ../learn
-git init
-git add .
-git commit -m "OmniPoll LEARN v4"
+git init && git add . && git commit -m "OmniPoll v5 LEARN"
 git remote add origin https://github.com/ShaikMuzzammil/omnipoll-learn.git
 git push -u origin main
 ```
 
-**Vercel → New Project → omnipoll-learn → Add env vars:**
+Vercel → New Project → omnipoll-learn → **Same env vars + VITE_HOST_APP_URL** → Deploy
+
+---
+
+## Environment Variables
+
+### HOST app
 
 | Variable | Value |
 |---|---|
-| `DATABASE_URL` | **SAME** as host |
-| `JWT_SECRET` | **SAME** as host |
-| `PUSHER_APP_ID` | **SAME** as host |
-| `PUSHER_KEY` | **SAME** as host |
-| `PUSHER_SECRET` | **SAME** as host |
+| `DATABASE_URL` | `postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require` |
+| `JWT_SECRET` | Any 32+ char random string |
+| `PUSHER_APP_ID` | From pusher.com → App Keys |
+| `PUSHER_KEY` | From pusher.com → App Keys |
+| `PUSHER_SECRET` | From pusher.com → App Keys |
 | `PUSHER_CLUSTER` | `ap2` |
-| `VITE_PUSHER_KEY` | same as PUSHER_KEY |
+| `VITE_PUSHER_KEY` | Same as `PUSHER_KEY` |
 | `VITE_PUSHER_CLUSTER` | `ap2` |
-| `VITE_HOST_APP_URL` | `https://omnipoll-host.vercel.app` |
+| `VITE_STUDENT_APP_URL` | `https://omnipoll-learn.vercel.app` |
+| `RESEND_API_KEY` | From resend.com (for email results) |
+| `EMAIL_FROM` | `noreply@yourdomain.com` |
+
+### LEARN app
+
+All same vars **except**:
+- Remove `VITE_STUDENT_APP_URL`
+- Add `VITE_HOST_APP_URL=https://omnipoll-host.vercel.app`
 
 ---
 
-## 💻 Local Development
+## Features
 
-```bash
-# Terminal 1 — HOST API
-cd host
-cp .env.example .env    # fill in your values
-npm run dev:api         # API on :3001
+### HOST (Teacher)
+- Dashboard with live poll stats + activity feed
+- **Quiz Builder**: 20 poll types, unlimited questions per quiz, per-question type selector, options/matching/matrix/slider per question, correct answer marking, points, explanation
+- Present mode with QR code (links to LEARN app)
+- Results: participant table, expandable cards, email individual/all
+- Moderation: real-time tab switch alerts, severity levels, resolve, email
+- Classrooms: create with invite code, manage roster, assign polls, class results
+- Analytics: overview charts, score distribution, top polls
 
-# Terminal 2 — HOST Frontend
-cd host
-npm run dev             # App on :8080
-
-# Terminal 3 — LEARN API
-cd learn
-cp .env.example .env    # fill in your values (same values as host)
-npm run dev:api         # API on :3002 (or change PORT=3002 in .env)
-
-# Terminal 4 — LEARN Frontend
-cd learn
-npm run dev             # App on :8081 (change port in vite.config.ts)
-```
-
----
-
-## 🎓 Demo Accounts
-
-| Role | Email | Password | Portal |
-|---|---|---|---|
-| Teacher | `demo@omnipoll.io` | `demo1234` | HOST |
-| Student | `student@omnipoll.io` | `student123` | LEARN |
+### LEARN (Student)
+- Clean student-only interface (no teacher login)
+- Quick join via code or QR scan
+- Pre-quiz screen with rules and warnings
+- 20 question type renderers with timer ring
+- Tab detection → auto-submit on 3rd switch
+- Classrooms: join by code, view live/upcoming/completed polls, scores
+- Key sheet: per-answer breakdown with correct/wrong overlay
+- Leaderboard, Notifications, Results history
 
 ---
 
-## 📊 Feature Matrix
+## Tech Stack
 
-| Feature | HOST | LEARN |
-|---|---|---|
-| Landing page | Full with Demo widget | Student-focused |
-| Login / Signup | Teacher role | Student role |
-| Dashboard | Full poll management | My results & progress |
-| Create poll | ✅ 20 types, multi-question | ❌ |
-| Present fullscreen | ✅ QR + live chart | ❌ |
-| Moderation | ✅ Tab alerts, live feed | ❌ |
-| Analytics | ✅ Deep dive | ❌ |
-| Templates | ✅ | ❌ |
-| Join poll | ✅ (test as student) | ✅ Guest OK |
-| Pre-quiz screen | ❌ | ✅ Warnings + guide |
-| Participate | ✅ (test mode) | ✅ Full experience |
-| Tab detection | Receive alerts | Sends alerts |
-| Key sheets | ✅ Release to students | ✅ View own |
-| Classrooms | ✅ Create + manage | ✅ Join + view |
-| Leaderboard | ✅ | ✅ |
-| Notifications | ✅ | ✅ |
-| Settings | ✅ | ✅ |
-
----
-
-## ⚡ Tech Stack
-
-| Layer | Technology |
+| Layer | Tech |
 |---|---|
-| Frontend | Vite 5 + React 18 + TypeScript |
-| Styling | Tailwind CSS 3 + Framer Motion |
-| State | TanStack Query v5 + React Router v6 |
+| Frontend | Vite + React 18 + TypeScript |
+| Styling | Tailwind CSS (cream/terracotta design system) |
+| Animation | Framer Motion |
+| Data Fetching | TanStack Query v5 |
 | Charts | Recharts |
-| Real-time | Pusher Channels |
-| Backend | Express.js (Vercel serverless) |
-| Database | Neon PostgreSQL (auto-migrates on cold start) |
-| Auth | JWT + bcryptjs (shared across both apps) |
-| Deploy | Vercel (free tier, 2 projects) |
-
----
-
-## 🔗 Live URLs (after deployment)
-
-- **HOST (Teacher):** https://omnipoll-host.vercel.app
-- **LEARN (Student):** https://omnipoll-learn.vercel.app
-- **Join a poll:** https://omnipoll-learn.vercel.app/join
-
----
-
-## 🔧 Fix: "relation users does not exist"
-
-Both apps auto-create database tables on first API call (`ensureTables()`).  
-If you see this error, it means `DATABASE_URL` is missing in Vercel env vars.  
-→ Add it in **Vercel → Settings → Environment Variables → Redeploy**
-
----
-
-Built with ❤️ — OmniPoll v4 GODMODE
+| Auth | JWT + bcryptjs |
+| Database | Neon PostgreSQL (serverless) |
+| Real-time | Pusher Channels (cluster ap2) |
+| Email | Resend API |
+| Deploy | Vercel (SPA + serverless API) |
