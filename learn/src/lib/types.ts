@@ -77,6 +77,10 @@ export interface PollSettings {
   preventTabSwitch: boolean;
   showProgressBar: boolean;
   allowReview: boolean;
+  fullscreenMode?: boolean;      // force fullscreen on student device
+  negativeMarking?: boolean;
+  penaltyPoints?: number;
+  caseSensitive?: boolean;
 }
 
 // ── Attempt (student quiz response) ───────────────────────────────────────────

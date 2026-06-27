@@ -23,10 +23,32 @@ export default function Contact() {
   const step1Valid = form.name.trim() && form.email.trim();
 
   const handleSend = async () => {
+    if (!form.name.trim() || !form.email.trim()) {
+      return;
+    }
     setSend(true);
-    await new Promise(r => setTimeout(r, 1400));
-    setSend(false);
-    setSent(true);
+    try {
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          email: form.email.trim(),
+          message: form.message.trim() || '(no message)',
+          subject: form.subject,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setSent(true);
+      } else {
+        alert(data.error || 'Failed to send. Please try again.');
+      }
+    } catch {
+      alert('Network error — please check your connection and try again.');
+    } finally {
+      setSend(false);
+    }
   };
 
   return (

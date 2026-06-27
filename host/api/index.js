@@ -706,44 +706,103 @@ app.patch('/api/attempts/:id/save', async (req, res) => {
 app.post('/api/attempts/:id/submit', async (req, res) => {
   const u = await auth(req, res, true);
   try {
-    const aR = await db('SELECT a.*, p.options, p.settings, p.type FROM attempts a JOIN polls p ON p.id=a.poll_id WHERE a.id=$1', [req.params.id]);
+    const aR = await db('SELECT a.*, p.options, p.questions, p.settings, p.type FROM attempts a JOIN polls p ON p.id=a.poll_id WHERE a.id=$1', [req.params.id]);
     if (!aR.rows[0]) return err(res, 404, 'Attempt not found');
     const a = aR.rows[0];
     if (a.status === 'submitted') return err(res, 409, 'Already submitted');
 
-    const options  = typeof a.options  === 'string' ? JSON.parse(a.options)  : a.options;
-    const settings = typeof a.settings === 'string' ? JSON.parse(a.settings) : a.settings;
-    const { selectedOptions=[], textAnswer, numericAnswer, rankingOrder, matrixAnswers, heatmapX, heatmapY, timeTaken } = req.body;
+    const options   = typeof a.options   === 'string' ? JSON.parse(a.options   || '[]') : (a.options  || []);
+    const questions = typeof a.questions === 'string' ? JSON.parse(a.questions || '[]') : (a.questions || []);
+    const settings  = typeof a.settings  === 'string' ? JSON.parse(a.settings  || '{}') : (a.settings || {});
+    const { selectedOptions=[], textAnswer, numericAnswer, rankingOrder, matrixAnswers, heatmapX, heatmapY, timeTaken, allAnswers } = req.body;
 
-    // ── Auto-grade ─────────────────────────────────────────────────────────
+    const QUIZ_TYPES = ['quiz','multiple_choice','true_false','image_choice','fill_blank','matching'];
     let score = 0, maxScore = 0, isCorrect = false;
-    if (['quiz','multiple_choice','true_false'].includes(a.type) && options.length > 0) {
-      const correct = options.filter(o=>o.isCorrect).map(o=>o.id);
-      maxScore = options.reduce((s,o)=>s+(o.points||1),0);
-      const earned = options.filter(o=>o.isCorrect && selectedOptions.includes(o.id));
-      score = earned.reduce((s,o)=>s+(o.points||1),0);
-      if(settings.penaltyForWrong){
-        const wrong = selectedOptions.filter(id=>!correct.includes(id)).length;
-        score = Math.max(0, score - wrong * (settings.penaltyForWrong||0));
+    const detailedAnswers = [];
+
+    const gradeQuestion = (qDef, qSelected=[], qText='') => {
+      const qType = qDef.type || a.type;
+      const qOpts = qDef.options || [];
+      let qScore = 0, qMax = 0;
+
+      if (['quiz','multiple_choice','true_false','image_choice'].includes(qType) && qOpts.length > 0) {
+        const correct = qOpts.filter(o=>o.isCorrect).map(o=>o.id);
+        qMax = qOpts.filter(o=>o.isCorrect).reduce((s,o)=>s+(o.points||1), 0) || qOpts.filter(o=>o.isCorrect).length || 1;
+        const earned = qOpts.filter(o=>o.isCorrect && qSelected.includes(o.id));
+        qScore = earned.reduce((s,o)=>s+(o.points||1), 0);
+        if (settings.negativeMarking || settings.penaltyForWrong) {
+          const wrong = qSelected.filter(id=>!correct.includes(id)).length;
+          const penalty = settings.penaltyPoints || settings.penaltyForWrong || 0.25;
+          qScore = Math.max(0, qScore - wrong * penalty);
+        }
+      } else if (qType === 'fill_blank') {
+        qMax = qDef.points || 1;
+        const fillCorrect = (qDef.fillBlankAnswer || '').trim();
+        const fillGiven   = (qText || '').trim();
+        const match = settings.caseSensitive
+          ? fillGiven === fillCorrect
+          : fillGiven.toLowerCase() === fillCorrect.toLowerCase();
+        if (match && fillCorrect) qScore = qMax;
+      } else if (qType === 'matching') {
+        qMax = qDef.points || (qDef.matchPairs?.length || 1);
+        qScore = qSelected.length >= (qDef.matchPairs?.length || 1) ? qMax : 0;
+      } else {
+        qMax = 0; qScore = 0;
       }
-      isCorrect = score >= maxScore;
+
+      const correctAnswer = qOpts.filter(o=>o.isCorrect).map(o=>o.text).join(', ')
+        || qDef.fillBlankAnswer || '';
+      const yourAnswer = qOpts.filter(o=>qSelected.includes(o.id)).map(o=>o.text).join(', ')
+        || qText || '';
+
+      return {
+        questionId: qDef.id || qDef.type,
+        questionTitle: qDef.title || qDef.question || '',
+        questionType: qType,
+        selectedOptions: qSelected,
+        textAnswer: qText,
+        yourAnswer,
+        correctAnswer,
+        isCorrect: qMax > 0 && qScore >= qMax,
+        isPartial: qMax > 0 && qScore > 0 && qScore < qMax,
+        pointsEarned: qScore,
+        maxPoints: qMax,
+        explanation: qDef.explanation,
+      };
+    };
+
+    // ── Multi-question quiz grading ──────────────────────────────────────────
+    const isMultiQ = questions.length > 1;
+    if (isMultiQ && allAnswers && QUIZ_TYPES.includes(a.type)) {
+      for (let qi = 0; qi < questions.length; qi++) {
+        const qDef = questions[qi];
+        const ans  = allAnswers[qi] || {};
+        const qResult = gradeQuestion(qDef, ans.selected || [], ans.text || '');
+        score    += qResult.pointsEarned;
+        maxScore += qResult.maxPoints;
+        detailedAnswers.push(qResult);
+      }
+      isCorrect = maxScore > 0 && score >= maxScore;
+    } else if (QUIZ_TYPES.includes(a.type) && options.length > 0) {
+      // Single question grading
+      const qDef = questions[0] || { type: a.type, options, title: '' };
+      const qResult = gradeQuestion(qDef, selectedOptions, textAnswer || '');
+      score    = qResult.pointsEarned;
+      maxScore = qResult.maxPoints;
+      isCorrect = qResult.isCorrect;
+      detailedAnswers.push(qResult);
     }
 
-    const percentage = maxScore > 0 ? Math.round((score/maxScore)*100) : null;
-    const passed = settings.passingScore && percentage !== null ? percentage >= settings.passingScore : null;
-
-    // Store the answer
-    const answerPayload = {
-      selectedOptions, textAnswer, numericAnswer,
-      rankingOrder, matrixAnswers, heatmapX, heatmapY,
-      isCorrect, pointsEarned: score,
-    };
+    const percentage = maxScore > 0 ? Math.round((score / maxScore) * 100) : null;
+    const passed = settings.passingScore && percentage !== null
+      ? percentage >= Number(settings.passingScore) : null;
 
     await db(
       `UPDATE attempts SET status='submitted', score=$1, max_score=$2, percentage=$3, passed=$4,
        time_taken=$5, submitted_at=NOW(), answers=$6, updated_at=NOW() WHERE id=$7`,
-      [score, maxScore||null, percentage, passed, timeTaken||null,
-       JSON.stringify([answerPayload]), req.params.id]
+      [score, maxScore || null, percentage, passed, timeTaken || null,
+       JSON.stringify(detailedAnswers.length ? detailedAnswers : [{ selectedOptions, textAnswer, numericAnswer, rankingOrder, matrixAnswers, heatmapX, heatmapY, isCorrect, pointsEarned: score }]),
+       req.params.id]
     );
 
     // Also insert as a vote for live results
@@ -811,9 +870,9 @@ app.get('/api/attempts/:id/keysheet', async (req, res) => {
   try {
     const r = await db(
       `SELECT a.*, p.title as poll_title, p.description as poll_desc,
-              p.options as poll_options, p.type as poll_type,
-              p.settings as poll_settings, p.status as poll_status,
-              u.name as user_name
+              p.options as poll_options, p.questions as poll_questions,
+              p.type as poll_type, p.settings as poll_settings,
+              p.status as poll_status, u.name as user_name, u.email as user_email
        FROM attempts a
        JOIN polls p ON p.id=a.poll_id
        LEFT JOIN users u ON u.id=a.user_id
@@ -823,44 +882,115 @@ app.get('/api/attempts/:id/keysheet', async (req, res) => {
     if (!r.rows[0]) return err(res, 404, 'Attempt not found');
     const a = r.rows[0];
 
-    // Check if results released or requester is the creator
+    // Check if results released or requester is teacher/creator
     if (a.poll_status !== 'results_released') {
-      // Allow if teacher checking their own poll
-      if (!u) return err(res, 403, 'Results not yet released');
+      if (!u) return err(res, 403, 'Results not yet released by your teacher');
       const pollOwner = await db('SELECT creator_id FROM polls WHERE id=$1', [a.poll_id]);
       if (pollOwner.rows[0]?.creator_id !== u.id) return err(res, 403, 'Results not yet released');
     }
 
-    const options  = typeof a.poll_options === 'string' ? JSON.parse(a.poll_options) : (a.poll_options||[]);
-    const settings = typeof a.poll_settings === 'string' ? JSON.parse(a.poll_settings) : (a.poll_settings||{});
-    const answers  = typeof a.answers === 'string' ? JSON.parse(a.answers) : (a.answers||[]);
-    const ans      = answers[0] || {};
-    const selected = ans.selectedOptions || [];
-    const correct  = options.filter(o=>o.isCorrect).map(o=>o.id);
+    const options   = typeof a.poll_options   === 'string' ? JSON.parse(a.poll_options   || '[]') : (a.poll_options  || []);
+    const questions = typeof a.poll_questions === 'string' ? JSON.parse(a.poll_questions || '[]') : (a.poll_questions || []);
+    const settings  = typeof a.poll_settings  === 'string' ? JSON.parse(a.poll_settings  || '{}') : (a.poll_settings || {});
+    const rawAns    = typeof a.answers        === 'string' ? JSON.parse(a.answers         || '[]') : (a.answers       || []);
 
-    const answerBreakdown = options.map(opt => ({
-      questionId: opt.id,
-      questionTitle: a.poll_title,
-      questionType: a.poll_type,
-      yourAnswer: selected.includes(opt.id) ? opt.text : '',
-      correctAnswer: opt.isCorrect ? opt.text : '',
-      isCorrect: selected.includes(opt.id) && opt.isCorrect,
-      isPartial: false,
-      pointsEarned: (selected.includes(opt.id) && opt.isCorrect) ? (opt.points||1) : 0,
-      maxPoints: opt.isCorrect ? (opt.points||1) : 0,
-      timeTaken: a.time_taken,
-    }));
+    let answerBreakdown = [];
+
+    // Check if answers are already in detailed per-question format (new multi-Q format)
+    const isDetailedFormat = rawAns.length > 0 && rawAns[0]?.questionId !== undefined;
+
+    if (isDetailedFormat) {
+      // New format: answers array has full per-question breakdown
+      answerBreakdown = rawAns.map((ans, i) => ({
+        questionId:    ans.questionId || String(i),
+        questionTitle: ans.questionTitle || `Question ${i + 1}`,
+        questionType:  ans.questionType || a.poll_type,
+        yourAnswer:    ans.yourAnswer || ans.textAnswer || (ans.selectedOptions || []).join(', ') || '(no answer)',
+        correctAnswer: ans.correctAnswer || '',
+        isCorrect:     Boolean(ans.isCorrect),
+        isPartial:     Boolean(ans.isPartial),
+        pointsEarned:  Number(ans.pointsEarned || 0),
+        maxPoints:     Number(ans.maxPoints || 0),
+        explanation:   ans.explanation || null,
+        timeTaken:     null,
+      }));
+    } else if (questions.length > 1) {
+      // Multi-Q poll but old answer format — build breakdown from questions
+      const answersMap = rawAns.reduce((m, ans, i) => { m[i] = ans; return m; }, {});
+      answerBreakdown = questions.map((q, i) => {
+        const ans      = answersMap[i] || rawAns[0] || {};
+        const qOpts    = q.options || [];
+        const qSel     = ans.selectedOptions || ans.selected || [];
+        const yours    = qOpts.filter(o => qSel.includes(o.id)).map(o => o.text).join(', ') || ans.textAnswer || ans.text || '(no answer)';
+        const correct  = qOpts.filter(o => o.isCorrect).map(o => o.text).join(', ') || q.fillBlankAnswer || '';
+        const isOk     = qOpts.length > 0
+          ? qOpts.filter(o=>o.isCorrect).every(o=>qSel.includes(o.id)) && qSel.every(id=>qOpts.find(o=>o.id===id)?.isCorrect)
+          : false;
+        return {
+          questionId: q.id || String(i),
+          questionTitle: q.title || `Question ${i + 1}`,
+          questionType:  q.type || a.poll_type,
+          yourAnswer:    yours,
+          correctAnswer: correct,
+          isCorrect:     isOk,
+          isPartial:     false,
+          pointsEarned:  isOk ? (q.points || 1) : 0,
+          maxPoints:     q.points || 1,
+          explanation:   q.explanation || null,
+          timeTaken:     null,
+        };
+      });
+    } else {
+      // Single question legacy format
+      const ans      = rawAns[0] || {};
+      const selected = ans.selectedOptions || ans.selected || [];
+      answerBreakdown = options
+        .filter(opt => opt.isCorrect || selected.includes(opt.id))
+        .map(opt => ({
+          questionId:    opt.id,
+          questionTitle: a.poll_title,
+          questionType:  a.poll_type,
+          yourAnswer:    selected.includes(opt.id) ? opt.text : '',
+          correctAnswer: opt.isCorrect ? opt.text : '',
+          isCorrect:     Boolean(selected.includes(opt.id) && opt.isCorrect),
+          isPartial:     false,
+          pointsEarned:  (selected.includes(opt.id) && opt.isCorrect) ? Number(opt.points || 1) : 0,
+          maxPoints:     opt.isCorrect ? Number(opt.points || 1) : 0,
+          explanation:   opt.explanation || null,
+          timeTaken:     a.time_taken,
+        }));
+
+      // If no option breakdown, add single summary row
+      if (answerBreakdown.length === 0) {
+        answerBreakdown = [{
+          questionId:    'q1',
+          questionTitle: a.poll_title,
+          questionType:  a.poll_type,
+          yourAnswer:    ans.textAnswer || selected.join(', ') || '(no answer)',
+          correctAnswer: options.filter(o=>o.isCorrect).map(o=>o.text).join(', ') || '',
+          isCorrect:     Boolean(ans.isCorrect),
+          isPartial:     false,
+          pointsEarned:  Number(a.score || 0),
+          maxPoints:     Number(a.max_score || 0),
+          explanation:   null,
+          timeTaken:     a.time_taken,
+        }];
+      }
+    }
 
     ok(res, {
       attempt: {
-        id: a.id, status: a.status,
-        score: a.score||0, maxScore: a.max_score||0,
-        percentage: a.percentage||0, passed: a.passed,
-        timeTaken: a.time_taken,
+        id:          a.id,
+        status:      a.status,
+        score:       Number(a.score || 0),
+        maxScore:    Number(a.max_score || 0),
+        percentage:  Number(a.percentage || 0),
+        passed:      Boolean(a.passed),
+        timeTaken:   a.time_taken,
         submittedAt: a.submitted_at,
-        user: a.user_name ? { name:a.user_name } : null,
-        guestName: a.guest_name,
-        poll: { title:a.poll_title, description:a.poll_desc, settings },
+        user:        a.user_name ? { name: a.user_name, email: a.user_email } : null,
+        guestName:   a.guest_name,
+        poll: { title: a.poll_title, description: a.poll_desc, settings },
       },
       answers: answerBreakdown,
     });
@@ -1325,39 +1455,63 @@ app.post('/api/attempts/:id/email-result', async (req, res) => {
     );
     if (!aR.rows[0]) return err(res, 404, 'Attempt not found');
     const a = aR.rows[0];
-    const toEmail = a.guest_email || (u ? (await db('SELECT email FROM users WHERE id=$1',[u.id])).rows[0]?.email : null);
-    if (!toEmail) return err(res, 400, 'No email on record for this attempt');
-    // Send via Resend if configured
-    if (process.env.RESEND_API_KEY) {
-      const htmlBody = `
-        <div style="font-family:system-ui,sans-serif;max-width:520px;margin:auto;padding:24px;background:#FEFAF5;border-radius:12px;border:1px solid #E4CC94">
-          <div style="background:#D96C4A;color:white;padding:20px;border-radius:8px;text-align:center;margin-bottom:20px">
-            <h1 style="margin:0;font-size:24px">OmniPoll Results</h1>
-            <p style="margin:8px 0 0;opacity:0.85">${a.poll_title}</p>
-          </div>
-          <div style="background:white;border-radius:8px;padding:20px;border:1px solid #E4CC94;text-align:center;margin-bottom:16px">
-            <p style="font-size:14px;color:#64748b;margin:0 0 8px">Your Score</p>
-            <p style="font-size:48px;font-weight:900;color:#D96C4A;margin:0">${Math.round(a.percentage||0)}%</p>
-            <p style="font-size:14px;color:#64748b;margin:8px 0 0">${a.score||0}/${a.max_score||0} points · ${a.passed?'✅ Passed':'❌ Not passed'}</p>
-          </div>
-          <a href="${process.env.VITE_STUDENT_APP_URL||'https://omnipoll-learn.vercel.app'}/attempt/${a.id}/keysheet"
-             style="display:block;background:#D96C4A;color:white;text-decoration:none;padding:14px;border-radius:8px;text-align:center;font-weight:700;font-size:15px">
-            View Full Key Sheet →
-          </a>
-          <p style="text-align:center;font-size:12px;color:#94a3b8;margin-top:16px">OmniPoll · The most powerful polling platform</p>
-        </div>`;
-      await fetch('https://api.resend.com/emails', {
-        method:'POST',
-        headers:{ 'Authorization':`Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type':'application/json' },
-        body: JSON.stringify({
-          from: process.env.FROM_EMAIL||'noreply@omnipoll.app',
-          to: [toEmail],
-          subject: `Your OmniPoll results: ${a.poll_title}`,
-          html: htmlBody,
-        }),
-      });
+
+    // Resolve email: attempt guest_email > logged-in user's email
+    let toEmail = a.guest_email;
+    if (!toEmail && u) {
+      const uR = await db('SELECT email FROM users WHERE id=$1', [u.id]);
+      toEmail = uR.rows[0]?.email || null;
     }
-    ok(res, { message: 'Result emailed', to: toEmail });
+    if (!toEmail) return err(res, 400, 'No email address on record for this attempt');
+
+    if (!process.env.RESEND_API_KEY) {
+      // No Resend key — acknowledge gracefully
+      return ok(res, { message: 'Email queued (add RESEND_API_KEY to Vercel env to enable sending)', to: toEmail });
+    }
+
+    const pct      = Math.round(Number(a.percentage || 0));
+    const fromEmail = process.env.FROM_EMAIL || 'OmniPoll <onboarding@resend.dev>';
+    const learnUrl  = process.env.VITE_STUDENT_APP_URL || 'https://omnipoll-learn.vercel.app';
+
+    const htmlBody = `
+      <div style="font-family:system-ui,sans-serif;max-width:520px;margin:auto;padding:24px;background:#FEFAF5;border-radius:12px;border:1px solid #E4CC94">
+        <div style="background:#D96C4A;color:white;padding:20px;border-radius:8px;text-align:center;margin-bottom:20px">
+          <h1 style="margin:0;font-size:24px">🎓 OmniPoll Results</h1>
+          <p style="margin:8px 0 0;opacity:0.9;font-size:14px">${a.poll_title}</p>
+        </div>
+        <div style="background:white;border-radius:8px;padding:24px;border:1px solid #E4CC94;text-align:center;margin-bottom:16px">
+          <p style="font-size:13px;color:#64748b;margin:0 0 8px">Your Score</p>
+          <p style="font-size:52px;font-weight:900;color:${pct >= 60 ? '#16a34a' : pct >= 40 ? '#ca8a04' : '#dc2626'};margin:0">${pct}%</p>
+          <p style="font-size:14px;color:#64748b;margin:8px 0 0">${Number(a.score || 0)} / ${Number(a.max_score || 0)} points &nbsp;·&nbsp; ${a.passed ? '✅ Passed' : '❌ Not passed'}</p>
+        </div>
+        <a href="${learnUrl}/attempt/${a.id}/keysheet"
+           style="display:block;background:#D96C4A;color:white;text-decoration:none;padding:14px;border-radius:8px;text-align:center;font-weight:700;font-size:15px;margin-bottom:16px">
+          📋 View Full Answer Sheet →
+        </a>
+        <p style="text-align:center;font-size:11px;color:#94a3b8;margin:0">OmniPoll · The complete interactive polling platform</p>
+      </div>`;
+
+    const emailRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [toEmail],
+        subject: `Your OmniPoll results: ${a.poll_title} — ${pct}%`,
+        html: htmlBody,
+      }),
+    });
+
+    if (!emailRes.ok) {
+      const errData = await emailRes.json().catch(() => ({}));
+      console.error('[email-result] Resend error:', errData);
+      return err(res, 502, `Email delivery failed: ${errData.message || 'Resend API error'}`);
+    }
+
+    ok(res, { message: 'Result emailed successfully', to: toEmail });
   } catch (e) { err(res, 500, e.message); }
 });
 
@@ -1473,12 +1627,57 @@ function formatAttempt(a) {
   if (!a) return null;
   return {
     id:a.id, pollId:a.poll_id, userId:a.user_id, guestName:a.guest_name, guestEmail:a.guest_email,
-    score:a.score, maxScore:a.max_score, percentage:a.percentage ? Math.round(a.percentage) : null,
+    score:    a.score    !== null && a.score    !== undefined ? Number(a.score)    : 0,
+    maxScore: a.max_score !== null && a.max_score !== undefined ? Number(a.max_score) : 0,
+    percentage: a.percentage !== null && a.percentage !== undefined ? Math.round(Number(a.percentage)) : null,
     passed:a.passed, timeTaken:a.time_taken, status:a.status,
     startedAt:a.created_at, submittedAt:a.submitted_at,
     answers: typeof a.answers==='string'?JSON.parse(a.answers||'[]'):a.answers||[],
     poll: a.poll_title ? { title:a.poll_title, type:a.poll_type, status:a.poll_status } : null,
   };
 }
+
+// POST /api/contact
+app.post('/api/contact', async (req, res) => {
+  try {
+    const { name, email, message, subject = 'General Question' } = req.body;
+    if (!name || !email) return err(res, 400, 'Name and email are required');
+    const safeMsg = (message || '').substring(0, 2000);
+
+    console.log(`[Contact] ${name} <${email}> — ${subject}: ${safeMsg.substring(0, 80)}`);
+
+    if (process.env.RESEND_API_KEY) {
+      const contactEmail = process.env.CONTACT_EMAIL || process.env.FROM_EMAIL || 'hello@omnipoll.app';
+      const fromEmail    = process.env.FROM_EMAIL || 'OmniPoll <onboarding@resend.dev>';
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: [contactEmail],
+          reply_to: email,
+          subject: `[OmniPoll Contact] ${subject} — from ${name}`,
+          html: `
+            <div style="font-family:system-ui,sans-serif;max-width:520px;margin:auto;padding:24px">
+              <h2 style="color:#D96C4A;margin:0 0 16px">New Contact Message</h2>
+              <table style="width:100%;border-collapse:collapse;font-size:14px">
+                <tr><td style="padding:6px 0;color:#64748b;width:80px">From</td><td style="padding:6px 0;font-weight:600">${name} &lt;${email}&gt;</td></tr>
+                <tr><td style="padding:6px 0;color:#64748b">Topic</td><td style="padding:6px 0">${subject}</td></tr>
+              </table>
+              <div style="margin-top:16px;padding:16px;background:#FEFAF5;border-radius:8px;border:1px solid #E4CC94">
+                <p style="margin:0;font-size:14px;color:#334155;white-space:pre-wrap">${safeMsg.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
+              </div>
+              <p style="font-size:11px;color:#94a3b8;margin-top:16px">OmniPoll contact form submission</p>
+            </div>`,
+        }),
+      });
+    }
+
+    ok(res, { message: 'Message received! We will reply within 24 hours.' });
+  } catch (e) { err(res, 500, e.message); }
+});
 
 module.exports = app;

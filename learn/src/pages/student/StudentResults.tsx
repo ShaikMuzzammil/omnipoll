@@ -22,7 +22,7 @@ export default function StudentResults() {
     return matchSearch && matchFilter && a.status === 'submitted';
   });
 
-  const avgScore = attempts.filter(a => a.percentage !== undefined).reduce((s, a) => s + (a.percentage ?? 0), 0)
+  const avgScore = attempts.filter(a => a.percentage != null).reduce((s, a) => s + Number(a.percentage ?? 0), 0)
     / Math.max(1, attempts.filter(a => a.percentage !== undefined).length);
 
   return (
@@ -36,7 +36,7 @@ export default function StudentResults() {
       <div className="grid grid-cols-3 gap-3">
         {[
           { label:'Total Attempts', value: attempts.filter(a=>a.status==='submitted').length, color:'text-terracotta-600' },
-          { label:'Average Score',  value: `${avgScore.toFixed(0)}%`, color: scoreColor(avgScore) },
+          { label:'Average Score',  value: `${Number(avgScore).toFixed(0)}%`, color: scoreColor(Number(avgScore)) },
           { label:'Passed',         value: attempts.filter(a=>a.passed===true).length, color:'text-green-600' },
         ].map(s => (
           <div key={s.label} className="stat-card">
@@ -96,9 +96,9 @@ export default function StudentResults() {
                 <div className="text-right flex-shrink-0">
                   {a.percentage !== undefined ? (
                     <>
-                      <p className={`text-2xl font-display font-bold ${scoreColor(a.percentage)}`}>{a.percentage.toFixed(0)}%</p>
-                      <p className="text-xs text-slate-400">{a.score}/{a.maxScore} pts</p>
-                      <p className={`text-xs font-medium mt-0.5 ${scoreColor(a.percentage)}`}>{scoreLabel(a.percentage)}</p>
+                      <p className={`text-2xl font-display font-bold ${scoreColor(Number(a.percentage))}`}>{Number(a.percentage).toFixed(0)}%</p>
+                      <p className="text-xs text-slate-400">{Number(a.score??0)}/{Number(a.maxScore??0)} pts</p>
+                      <p className={`text-xs font-medium mt-0.5 ${scoreColor(Number(a.percentage))}`}>{scoreLabel(Number(a.percentage))}</p>
                     </>
                   ) : (
                     <p className="text-sm text-slate-400">—</p>

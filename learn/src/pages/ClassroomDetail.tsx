@@ -190,7 +190,7 @@ export default function ClassroomDetail() {
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {myAttempt ? (
                           <div className="text-right">
-                            <p className={`font-bold text-lg ${scoreColor(myAttempt.percentage??0)}`}>{(myAttempt.percentage??0).toFixed(0)}%</p>
+                            <p className={`font-bold text-lg ${scoreColor(Number(myAttempt.percentage??0))}`}>{Number(myAttempt.percentage??0).toFixed(0)}%</p>
                             <p className="text-xs text-slate-400">{scoreLabel(myAttempt.percentage??0)}</p>
                           </div>
                         ) : (
@@ -242,7 +242,7 @@ export default function ClassroomDetail() {
                 </div>
                 {r.percentage != null && (
                   <div className="text-right flex-shrink-0">
-                    <p className={`font-bold text-xl ${scoreColor(r.percentage)}`}>{r.percentage.toFixed(0)}%</p>
+                    <p className={`font-bold text-xl ${scoreColor(Number(r.percentage??0))}`}>{Number(r.percentage??0).toFixed(0)}%</p>
                     <p className="text-xs text-slate-400">{r.score}/{r.maxScore} pts</p>
                   </div>
                 )}

@@ -25,16 +25,16 @@ export default function StudentAnalytics() {
 
   const submitted = attempts.filter(a => a.status === 'submitted');
   const avgScore  = submitted.length && submitted.some(a=>a.percentage!=null)
-    ? submitted.reduce((s,a)=>s+(a.percentage??0),0)/submitted.filter(a=>a.percentage!=null).length : 0;
-  const best      = Math.max(...submitted.map(a=>a.percentage??0), 0);
-  const passed    = submitted.filter(a=>(a.percentage??0)>=60).length;
+    ? submitted.reduce((s,a)=>s+Number(a.percentage??0),0)/submitted.filter(a=>a.percentage!=null).length : 0;
+  const best      = Math.max(...submitted.map(a=>Number(a.percentage??0)), 0);
+  const passed    = submitted.filter(a=>Number(a.percentage??0)>=60).length;
 
   // Score distribution
   const distrib = [
-    { range:'0–40',   count: submitted.filter(a=>(a.percentage??0)<40).length,              color:'#EF4444' },
-    { range:'40–60',  count: submitted.filter(a=>(a.percentage??0)>=40&&(a.percentage??0)<60).length, color:'#F59E0B' },
-    { range:'60–80',  count: submitted.filter(a=>(a.percentage??0)>=60&&(a.percentage??0)<80).length, color:'#3B82F6' },
-    { range:'80–100', count: submitted.filter(a=>(a.percentage??0)>=80).length,             color:'#10B981' },
+    { range:'0–40',   count: submitted.filter(a=>Number(a.percentage??0)<40).length,              color:'#EF4444' },
+    { range:'40–60',  count: submitted.filter(a=>Number(a.percentage??0)>=40&&Number(a.percentage??0)<60).length, color:'#F59E0B' },
+    { range:'60–80',  count: submitted.filter(a=>Number(a.percentage??0)>=60&&Number(a.percentage??0)<80).length, color:'#3B82F6' },
+    { range:'80–100', count: submitted.filter(a=>Number(a.percentage??0)>=80).length,             color:'#10B981' },
   ];
 
   // Activity by type
@@ -64,8 +64,8 @@ export default function StudentAnalytics() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label:'Quizzes Done',  value:submitted.length,          icon:CheckCircle, color:'text-green-600',      bg:'bg-green-100' },
-          { label:'Avg Score',     value:`${avgScore.toFixed(0)}%`, icon:TrendingUp,  color:'text-blue-600',        bg:'bg-blue-100'  },
-          { label:'Best Score',    value:`${best.toFixed(0)}%`,     icon:Trophy,      color:'text-amber-600',       bg:'bg-amber-100' },
+          { label:'Avg Score',     value:`${Number(avgScore).toFixed(0)}%`, icon:TrendingUp,  color:'text-blue-600',        bg:'bg-blue-100'  },
+          { label:'Best Score',    value:`${Number(best).toFixed(0)}%`,     icon:Trophy,      color:'text-amber-600',       bg:'bg-amber-100' },
           { label:'Pass Rate',     value:submitted.length?`${Math.round(passed/submitted.length*100)}%`:'—', icon:Target, color:'text-purple-600', bg:'bg-purple-100' },
         ].map((s,i)=>(
           <motion.div key={s.label} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{delay:i*0.06}}
@@ -142,7 +142,7 @@ export default function StudentAnalytics() {
             <h2 className="font-display font-semibold text-slate-800 mb-4">Recent Attempts</h2>
             <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
               {submitted.slice(0,8).map((a,i)=>{
-                const pct = a.percentage ?? 0;
+                const pct = Number(a.percentage ?? 0);
                 return (
                   <div key={a.id} className="flex items-center gap-3 p-2.5 bg-cream-50 border border-cream-200 rounded-xl">
                     <div className={`w-2 h-8 rounded-full flex-shrink-0 ${pct>=80?'bg-green-400':pct>=60?'bg-blue-400':pct>=40?'bg-amber-400':'bg-red-400'}`}/>

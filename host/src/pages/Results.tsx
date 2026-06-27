@@ -6,7 +6,7 @@ import {
   BarChart3, Users, Clock, Copy, ExternalLink, Loader2,
   Play, Square, Mail, Send, ChevronDown, ChevronUp,
   CheckCircle, XCircle, Trophy, Eye, Download, ArrowUpRight,
-  AlertCircle,
+  AlertCircle, Lock,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -19,6 +19,24 @@ import type { Poll, Attempt } from '@/lib/types';
 
 const COLORS = ['#D96C4A','#7A8C6E','#E4CC94','#A6472C','#5A6A4E','#EEDBB0'];
 const STUDENT_APP = import.meta.env.VITE_STUDENT_APP_URL ?? 'https://omnipoll-learn.vercel.app';
+
+// Robust clipboard copy with fallback for HTTP / restricted environments
+function copyToClipboard(text: string): void {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text: string): void {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try { document.execCommand('copy'); } catch {}
+  document.body.removeChild(ta);
+}
 
 export default function Results() {
   const { pollId } = useParams<{ pollId:string }>();
@@ -52,57 +70,78 @@ export default function Results() {
 
   const statusMut = useMutation({
     mutationFn:(s:string)=>pollsApi.status(pollId!,s),
-    onSuccess:()=>{qc.invalidateQueries({queryKey:['poll',pollId]});toast.success('Updated');},
-  });
-  const releaseMut = useMutation({
-    mutationFn:()=>pollsApi.release(pollId!),
-    onSuccess:()=>{qc.invalidateQueries({queryKey:['poll',pollId]});toast.success('Results released! Students notified. 🎉');},
+    onSuccess:()=>{qc.invalidateQueries({queryKey:['poll',pollId]});toast.success('Poll status updated');},
+    onError:(e:any)=>toast.error(e.message??'Failed to update status'),
   });
 
+  const releaseMut = useMutation({
+    mutationFn:()=>pollsApi.release(pollId!),
+    onSuccess:()=>{
+      qc.invalidateQueries({queryKey:['poll',pollId]});
+      qc.invalidateQueries({queryKey:['poll-attempts',pollId]});
+      toast.success('🔓 Results released! Students have been notified.');
+    },
+    onError:(e:any)=>toast.error(e.message??'Failed to release results — check your session'),
+  });
+
+  const copyCode = () => {
+    const code = poll?.code ?? '';
+    copyToClipboard(code);
+    toast.success(`Poll code "${code}" copied!`);
+  };
+
   const copyJoinLink = () => {
-    navigator.clipboard.writeText(`${STUDENT_APP}/join/${poll?.code}`);
+    const url = `${STUDENT_APP}/join/${poll?.code}`;
+    copyToClipboard(url);
     toast.success('Student join link copied!');
   };
 
   /* ── Send result email to one student ── */
   const sendEmail = async (attemptId:string, name:string) => {
     try {
-      const res = await fetch(`/api/attempts/${attemptId}/email-result`,{
-        method:'POST',
-        headers:{Authorization:`Bearer ${localStorage.getItem('op_token')||''}`},
+      const token = localStorage.getItem('op_token') || '';
+      const res = await fetch(`/api/attempts/${attemptId}/email-result`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
       });
-      const data = await res.json();
-      if(res.ok) toast.success(`Result emailed to ${name}!`);
-      else toast.error(data.error||'No email on record');
-    } catch { toast.error('Failed to send email'); }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) toast.success(`Result emailed to ${name}! ✉️`);
+      else        toast.error(data.error || 'No email on record for this student');
+    } catch {
+      toast.error('Email failed — check your network');
+    }
   };
 
-  /* ── Send to ALL ── */
+  /* ── Send to ALL submitted students ── */
   const sendToAll = async () => {
     const eligible = attempts.filter(a=>a.status==='submitted');
-    if(!eligible.length){toast.error('No submitted attempts');return;}
+    if (!eligible.length) { toast.error('No submitted attempts yet'); return; }
     setSending(true);
-    let ok=0,fail=0;
-    for(const a of eligible){
-      try{
-        const res = await fetch(`/api/attempts/${a.id}/email-result`,{
-          method:'POST',
-          headers:{Authorization:`Bearer ${localStorage.getItem('op_token')||''}`},
+    let ok=0, fail=0;
+    for (const a of eligible) {
+      try {
+        const token = localStorage.getItem('op_token') || '';
+        const res = await fetch(`/api/attempts/${a.id}/email-result`, {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
         });
-        if(res.ok) ok++;
-        else fail++;
-      }catch{ fail++; }
+        if (res.ok) ok++; else fail++;
+      } catch { fail++; }
     }
     setSending(false);
-    toast.success(`Sent to ${ok} student${ok!==1?'s':''}${fail>0?` (${fail} failed — no email)`:''}!`);
+    toast.success(`Sent to ${ok} student${ok!==1?'s':''}${fail>0?` · ${fail} skipped (no email)`:''}!`);
   };
 
-  if(pollLoad||!poll) return <div className="flex items-center justify-center py-20"><Loader2 size={28} className="animate-spin text-terracotta-400"/></div>;
+  if (pollLoad||!poll) return <div className="flex items-center justify-center py-20"><Loader2 size={28} className="animate-spin text-terracotta-400"/></div>;
 
   const chartData = results?.optionStats??[];
   const submitted = attempts.filter(a=>a.status==='submitted');
-  const avgScore  = submitted.length && submitted.some(a=>a.percentage!=null)
-    ? submitted.reduce((s,a)=>s+(a.percentage??0),0)/submitted.filter(a=>a.percentage!=null).length
+  const withScore = submitted.filter(a=>a.percentage!=null);
+  const avgScore  = withScore.length
+    ? withScore.reduce((s,a)=>s+Number(a.percentage??0),0)/withScore.length
     : null;
 
   const STATUS_MAP: Record<string,{cls:string;label:string}> = {
@@ -130,10 +169,11 @@ export default function Results() {
 
         {/* Action buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Code chip */}
-          <div className="flex items-center gap-2 bg-cream-100 border border-cream-300 rounded-xl px-3 py-1.5">
+          {/* Code chip with copy */}
+          <div className="flex items-center gap-1 bg-cream-100 border border-cream-300 rounded-xl px-3 py-1.5">
             <span className="font-mono text-sm font-black text-terracotta-700 tracking-[0.2em]">{poll.code}</span>
-            <button onClick={copyJoinLink} title="Copy student join link" className="p-0.5 hover:bg-cream-200 rounded text-slate-400 hover:text-terracotta-600 transition-colors"><Copy size={13}/></button>
+            <button onClick={copyCode} title="Copy code" className="p-0.5 hover:bg-cream-200 rounded text-slate-400 hover:text-terracotta-600 transition-colors"><Copy size={13}/></button>
+            <button onClick={copyJoinLink} title="Copy student join link" className="p-0.5 hover:bg-cream-200 rounded text-slate-400 hover:text-blue-600 transition-colors text-[10px] font-bold">URL</button>
           </div>
 
           {/* Present */}
@@ -145,27 +185,32 @@ export default function Results() {
           {/* Deep analysis */}
           <Link to={`/analyse/${pollId}`}
             className="flex items-center gap-1.5 px-3 py-2 bg-white border border-cream-300 hover:border-terracotta-300 rounded-xl text-sm font-medium text-slate-700 transition-all">
-            <BarChart3 size={14}/> Deep Analysis
+            <BarChart3 size={14}/> Analysis
           </Link>
 
           {/* Status controls */}
           {poll.status==='draft'&&(
-            <button onClick={()=>statusMut.mutate('active')}
-              className="flex items-center gap-1.5 px-3 py-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-xl text-sm font-semibold transition-all">
-              <Play size={14}/> Launch
+            <button onClick={()=>statusMut.mutate('active')} disabled={statusMut.isPending}
+              className="flex items-center gap-1.5 px-3 py-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-xl text-sm font-semibold transition-all disabled:opacity-60">
+              {statusMut.isPending?<Loader2 size={14} className="animate-spin"/>:<Play size={14}/>} Launch
             </button>
           )}
           {poll.status==='active'&&(
-            <button onClick={()=>statusMut.mutate('closed')}
-              className="flex items-center gap-1.5 px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl text-sm font-semibold transition-all">
-              <Square size={14}/> Close Poll
+            <button onClick={()=>statusMut.mutate('closed')} disabled={statusMut.isPending}
+              className="flex items-center gap-1.5 px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl text-sm font-semibold transition-all disabled:opacity-60">
+              {statusMut.isPending?<Loader2 size={14} className="animate-spin"/>:<Square size={14}/>} Close
             </button>
           )}
-          {poll.status==='closed'&&(
+          {(poll.status==='closed'||poll.status==='paused')&&(
             <button onClick={()=>releaseMut.mutate()} disabled={releaseMut.isPending}
-              className="flex items-center gap-1.5 px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-xl text-sm font-bold transition-all shadow-sm">
-              {releaseMut.isPending?<Loader2 size={14} className="animate-spin"/>:'🔓'} Release Results
+              className="flex items-center gap-1.5 px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-xl text-sm font-bold transition-all shadow-sm disabled:opacity-70">
+              {releaseMut.isPending?<Loader2 size={14} className="animate-spin"/>:<Lock size={14}/>} Release Results
             </button>
+          )}
+          {poll.status==='results_released'&&(
+            <div className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 border border-purple-200 text-purple-700 rounded-xl text-sm font-medium">
+              <CheckCircle size={14}/> Results Released
+            </div>
           )}
         </div>
       </div>
@@ -173,10 +218,10 @@ export default function Results() {
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          {label:'Participants', value:poll.uniqueParticipants, color:'text-terracotta-600', bg:'bg-terracotta-100', icon:Users},
-          {label:'Total Votes',  value:poll.totalVotes,         color:'text-blue-600',       bg:'bg-blue-100',       icon:BarChart3},
-          {label:'Submitted',    value:submitted.length,        color:'text-green-600',      bg:'bg-green-100',      icon:CheckCircle},
-          {label:'Avg Score',    value:avgScore!=null?`${(avgScore??0).toFixed(0)}%`:'—', color:'text-purple-600', bg:'bg-purple-100', icon:Trophy},
+          {label:'Participants', value:poll.uniqueParticipants??0, color:'text-terracotta-600', bg:'bg-terracotta-100', icon:Users},
+          {label:'Total Votes',  value:poll.totalVotes??0,         color:'text-blue-600',       bg:'bg-blue-100',       icon:BarChart3},
+          {label:'Submitted',    value:submitted.length,            color:'text-green-600',      bg:'bg-green-100',      icon:CheckCircle},
+          {label:'Avg Score',    value:avgScore!=null?`${Number(avgScore).toFixed(0)}%`:'—', color:'text-purple-600', bg:'bg-purple-100', icon:Trophy},
         ].map(s=>(
           <div key={s.label} className="bg-white border border-cream-200 rounded-2xl p-4 flex flex-col gap-1">
             <div className="flex items-center justify-between mb-1">
@@ -206,7 +251,14 @@ export default function Results() {
               <div className="text-5xl mb-3">📊</div>
               <p className="font-medium">No responses yet</p>
               <p className="text-sm mt-1">Share code <span className="font-mono font-black text-terracotta-500 tracking-wider">{poll.code}</span> with students</p>
-              <p className="text-xs mt-1">Student URL: <a href={`${STUDENT_APP}/join/${poll.code}`} target="_blank" rel="noreferrer" className="text-terracotta-600 underline">{STUDENT_APP}/join/{poll.code}</a></p>
+              <div className="flex items-center justify-center gap-2 mt-3">
+                <button onClick={copyCode} className="flex items-center gap-1.5 px-3 py-2 bg-terracotta-50 border border-terracotta-200 hover:bg-terracotta-100 text-terracotta-700 rounded-xl text-sm font-semibold transition-colors">
+                  <Copy size={13}/> Copy Code
+                </button>
+                <button onClick={copyJoinLink} className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-700 rounded-xl text-sm font-semibold transition-colors">
+                  <Copy size={13}/> Copy Join URL
+                </button>
+              </div>
             </div>
           ):(
             <div className="space-y-4">
@@ -224,10 +276,10 @@ export default function Results() {
                 <div key={i} className="flex items-center gap-3">
                   <span className="text-sm text-slate-700 w-36 truncate">{d.text}</span>
                   <div className="flex-1 bg-cream-200 rounded-full h-2.5 overflow-hidden">
-                    <motion.div className="h-full rounded-full" style={{width:`${d.percentage??0}%`,backgroundColor:COLORS[i%COLORS.length]}}
-                      initial={{width:0}} animate={{width:`${d.percentage??0}%`}} transition={{duration:0.7}}/>
+                    <motion.div className="h-full rounded-full" style={{width:`${Number(d.percentage??0)}%`,backgroundColor:COLORS[i%COLORS.length]}}
+                      initial={{width:0}} animate={{width:`${Number(d.percentage??0)}%`}} transition={{duration:0.7}}/>
                   </div>
-                  <span className="text-xs font-semibold text-slate-600 w-20 text-right">{d.count} ({(d.percentage??0).toFixed(0)}%)</span>
+                  <span className="text-xs font-semibold text-slate-600 w-20 text-right">{d.count} ({Number(d.percentage??0).toFixed(0)}%)</span>
                 </div>
               ))}
             </div>
@@ -240,20 +292,20 @@ export default function Results() {
         <div className="space-y-3">
           {/* Actions bar */}
           {submitted.length>0&&(
-            <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-xl">
+            <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-xl flex-wrap gap-2">
               <div className="text-sm text-blue-700">
-                <span className="font-bold">{submitted.length}</span> submitted attempt{submitted.length!==1?'s':''} ready
+                <span className="font-bold">{submitted.length}</span> submitted attempt{submitted.length!==1?'s':''}
                 {poll.status==='results_released'&&<span className="ml-2 text-green-700 font-medium">· Results released ✓</span>}
               </div>
-              <div className="flex gap-2">
-                {poll.status==='closed'&&(
+              <div className="flex gap-2 flex-wrap">
+                {(poll.status==='closed'||poll.status==='paused')&&(
                   <button onClick={()=>releaseMut.mutate()} disabled={releaseMut.isPending}
-                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-bold transition-colors">
-                    {releaseMut.isPending?<Loader2 size={12} className="animate-spin"/>:'🔓'} Release Results
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-bold transition-colors disabled:opacity-70">
+                    {releaseMut.isPending?<Loader2 size={12} className="animate-spin"/>:<Lock size={12}/>} Release Results
                   </button>
                 )}
                 <button onClick={sendToAll} disabled={sending}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold transition-colors">
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold transition-colors disabled:opacity-70">
                   {sending?<Loader2 size={12} className="animate-spin"/>:<Send size={12}/>}
                   {sending?'Sending…':'Email All Results'}
                 </button>
@@ -285,6 +337,7 @@ export default function Results() {
                     {attempts.map((a,i)=>{
                       const name = a.user?.name??a.guestName??'Anonymous';
                       const email = (a.user as any)?.email??a.guestEmail;
+                      const pct = Number(a.percentage??0);
                       const isExpanded = expandedRow===a.id;
                       return (
                         <>
@@ -307,8 +360,8 @@ export default function Results() {
                             <td className="px-4 py-3 hidden sm:table-cell">
                               {a.percentage!=null?(
                                 <div>
-                                  <span className={`font-bold text-base ${scoreColor(a.percentage??0)}`}>{(a.percentage??0).toFixed(0)}%</span>
-                                  <span className="text-xs text-slate-400 ml-1">{a.score??0}/{a.maxScore??0}pts</span>
+                                  <span className={`font-bold text-base ${scoreColor(pct)}`}>{pct.toFixed(0)}%</span>
+                                  <span className="text-xs text-slate-400 ml-1">{Number(a.score??0)}/{Number(a.maxScore??0)}pts</span>
                                 </div>
                               ):<span className="text-slate-400 text-xs">—</span>}
                             </td>
@@ -327,7 +380,7 @@ export default function Results() {
                                 {a.status==='submitted'&&(
                                   <>
                                     <Link to={`/attempt/${a.id}/keysheet`} onClick={e=>e.stopPropagation()}
-                                      className="p-1.5 hover:bg-purple-100 rounded-lg text-slate-400 hover:text-purple-600 transition-colors" title="Key Sheet">
+                                      className="p-1.5 hover:bg-purple-100 rounded-lg text-slate-400 hover:text-purple-600 transition-colors" title="View Key Sheet">
                                       <Eye size={14}/>
                                     </Link>
                                     <button onClick={e=>{e.stopPropagation();sendEmail(a.id,name);}}
@@ -352,7 +405,7 @@ export default function Results() {
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                                   <div className="p-2.5 bg-white rounded-xl border border-cream-200">
                                     <p className="text-slate-400 mb-0.5">Score</p>
-                                    <p className="font-bold text-slate-800">{a.score??0}/{a.maxScore??0} pts ({(a.percentage??0).toFixed(0)}%)</p>
+                                    <p className="font-bold text-slate-800">{Number(a.score??0)}/{Number(a.maxScore??0)} pts ({pct.toFixed(0)}%)</p>
                                   </div>
                                   <div className="p-2.5 bg-white rounded-xl border border-cream-200">
                                     <p className="text-slate-400 mb-0.5">Result</p>
@@ -367,19 +420,17 @@ export default function Results() {
                                     <p className="font-medium text-slate-700">{a.timeTaken?formatDuration(a.timeTaken):'—'}</p>
                                   </div>
                                 </div>
-                                {email&&(
-                                  <div className="mt-2 flex items-center gap-2">
-                                    <span className="text-xs text-slate-500">📧 {email}</span>
-                                    <button onClick={()=>sendEmail(a.id,name)}
-                                      className="text-xs text-blue-600 hover:text-blue-700 font-medium px-2.5 py-1 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1">
-                                      <Send size={11}/> Send Result Email
-                                    </button>
-                                    <Link to={`/attempt/${a.id}/keysheet`}
-                                      className="text-xs text-purple-600 font-medium px-2.5 py-1 bg-purple-50 rounded-lg border border-purple-200 hover:bg-purple-100 transition-colors flex items-center gap-1">
-                                      <Eye size={11}/> View Key Sheet
-                                    </Link>
-                                  </div>
-                                )}
+                                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                  {email&&<span className="text-xs text-slate-500">📧 {email}</span>}
+                                  <button onClick={()=>sendEmail(a.id,name)}
+                                    className="text-xs text-blue-600 hover:text-blue-700 font-medium px-2.5 py-1 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1">
+                                    <Send size={11}/> Send Result Email
+                                  </button>
+                                  <Link to={`/attempt/${a.id}/keysheet`}
+                                    className="text-xs text-purple-600 font-medium px-2.5 py-1 bg-purple-50 rounded-lg border border-purple-200 hover:bg-purple-100 transition-colors flex items-center gap-1">
+                                    <Eye size={11}/> View Key Sheet
+                                  </Link>
+                                </div>
                               </td>
                             </motion.tr>
                           )}

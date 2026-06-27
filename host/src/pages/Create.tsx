@@ -91,14 +91,28 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
   const navigate  = useNavigate();
   const [params]  = useSearchParams();
   const { pollId } = useParams();
-  const [step, setStep]       = useState(0);
+
+  const urlType = params.get('type') as PollType | null;
+  // Auto-advance to step 1 if type comes from URL (quick-create from sidebar)
+  const [step, setStep]       = useState(urlType && !editMode ? 1 : 0);
   const [loading, setLoading] = useState(false);
   const [catFilter, setCatFilter] = useState('All');
 
-  const [pollType, setPollType] = useState<PollType>((params.get('type') as PollType) ?? 'quiz');
+  const [pollType, setPollType] = useState<PollType>(urlType ?? 'quiz');
   const [title, setTitle]       = useState('');
   const [desc,  setDesc]        = useState('');
-  const [questions, setQuestions] = useState<Question[]>([newQ('quiz')]);
+
+  // True/False auto-setup: 2 locked options
+  const tfOptions = [
+    { id:'tf-true',  text:'True',  isCorrect:true,  points:1 },
+    { id:'tf-false', text:'False', isCorrect:false, points:0 },
+  ];
+
+  const [questions, setQuestions] = useState<Question[]>([
+    urlType === 'true_false'
+      ? { ...newQ('true_false'), options: tfOptions }
+      : newQ(urlType ?? 'quiz')
+  ]);
   const [activeQ, setActiveQ]     = useState(0);
   const [settings, setSettings]   = useState<PollSettings>(DEFAULT_SETTINGS);
   const [classroomId, setClassroomId] = useState('');
@@ -209,8 +223,14 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               {filteredTypes.map(t=>(
-                <motion.button key={t.type} onClick={()=>{setPollType(t.type);setQuestions([newQ(t.type)]);}}
-                  whileHover={{scale:1.02,y:-2}} whileTap={{scale:0.98}}
+                <motion.button key={t.type} onClick={()=>{
+                  setPollType(t.type);
+                  if (t.type === 'true_false') {
+                    setQuestions([{ ...newQ('true_false'), options: tfOptions }]);
+                  } else {
+                    setQuestions([newQ(t.type)]);
+                  }
+                }}                  whileHover={{scale:1.02,y:-2}} whileTap={{scale:0.98}}
                   className={`relative flex flex-col items-center gap-2 p-4 rounded-2xl border-2 text-center transition-all ${
                     pollType===t.type?'border-terracotta-500 bg-terracotta-50 shadow-md':'border-cream-200 bg-cream-50 hover:border-terracotta-200 hover:bg-white'}`}>
                   {pollType===t.type&&(
@@ -345,8 +365,41 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
 
                 {/* ── Type-specific content ── */}
 
-                {/* MCQ / Quiz / TF / Image */}
-                {qNeedsOpts&&qType!=='matrix'&&qType!=='matching'&&(
+                {/* True / False — locked binary choice */}
+                {qType==='true_false'&&(
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
+                      ✅ True / False Options
+                      <span className="text-slate-400 font-normal normal-case ml-1">— click to mark correct answer</span>
+                    </label>
+                    {[{id:'tf-true',text:'✅ True'},{id:'tf-false',text:'❌ False'}].map((opt,oi)=>{
+                      const existing = q.options.find(o=>o.id===opt.id||o.text.toLowerCase()===opt.text.toLowerCase().replace('✅ ','').replace('❌ ',''));
+                      const isCorrect = existing?.isCorrect ?? oi===0;
+                      return (
+                        <motion.div key={opt.id} layout
+                          className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${isCorrect?'bg-green-50 border-green-400':'bg-white border-cream-200 hover:border-cream-300'}`}
+                          onClick={()=>setQuestions(qs=>qs.map((q2,j)=>j===activeQ?{...q2,options:q2.options.map((o,k)=>({...o,isCorrect:k===oi}))}:q2))}>
+                          <div className={`w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${isCorrect?'bg-green-500 border-green-500':'border-slate-300'}`}>
+                            {isCorrect&&<Check size={12} className="text-white"/>}
+                          </div>
+                          <span className={`text-sm font-semibold ${isCorrect?'text-green-800':'text-slate-600'}`}>{opt.text}</span>
+                          {isCorrect&&<span className="ml-auto text-xs text-green-600 font-bold">✓ Correct</span>}
+                        </motion.div>
+                      );
+                    })}
+                    {qIsQuiz&&q.options.some(o=>o.isCorrect)&&(
+                      <div className="mt-2">
+                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wide">Explanation (optional)</label>
+                        <input value={q.explanation??''} onChange={e=>updateQ(activeQ,{explanation:e.target.value})}
+                          placeholder="Why is this the correct answer?"
+                          className="w-full px-3 py-2 border border-cream-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-1 focus:ring-terracotta-200 text-slate-600"/>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* MCQ / Quiz / Image — generic options */}
+                {qNeedsOpts&&qType!=='matrix'&&qType!=='matching'&&qType!=='true_false'&&(
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">

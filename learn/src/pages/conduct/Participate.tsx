@@ -68,6 +68,24 @@ export default function Participate() {
     }).catch(() => toast.error('Poll not found')).finally(() => setLoading(false));
   }, [pollId]);
 
+  /* ── Fullscreen mode ── */
+  useEffect(() => {
+    if (!poll?.settings?.fullscreenMode || showPre || submitted) return;
+    const tryFullscreen = async () => {
+      try {
+        if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch { /* user may have denied fullscreen */ }
+    };
+    tryFullscreen();
+    return () => {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+  }, [poll?.settings?.fullscreenMode, showPre, submitted]);
+
   /* ── Timer ── */
   useEffect(() => {
     const limit = q?.timeLimit ?? poll?.settings?.timeLimit;

@@ -48,7 +48,7 @@ export default function KeySheet() {
   );
 
   const { attempt, answers } = data;
-  const pct = attempt.percentage ?? 0;
+  const pct = Number(attempt.percentage ?? 0);
 
   return (
     <div className="min-h-screen bg-cream-100 py-8 px-4">
@@ -72,7 +72,7 @@ export default function KeySheet() {
             </div>
             <div className="text-center flex-shrink-0">
               <div className={`text-4xl font-display font-black ${scoreColor(pct)}`}>{pct.toFixed(0)}%</div>
-              <div className="text-xs text-slate-500 mt-0.5">{attempt.score}/{attempt.maxScore} pts</div>
+              <div className="text-xs text-slate-500 mt-0.5">{Number(attempt.score??0)}/{Number(attempt.maxScore??0)} pts</div>
             </div>
           </div>
 
@@ -176,12 +176,21 @@ export default function KeySheet() {
             onClick={async () => {
               try {
                 const res = await fetch(`/api/attempts/${id}/email-result`, {
-                  method:'POST',
-                  headers:{ Authorization:`Bearer ${localStorage.getItem('op_token')||''}` },
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${localStorage.getItem('op_token') || ''}`,
+                  },
                 });
-                if (res.ok) { alert('Results emailed successfully!'); }
-                else { alert('No email on record for this attempt.'); }
-              } catch { alert('Failed to send email.'); }
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) {
+                  alert(`✅ Results emailed to ${data.to || 'your address'}!`);
+                } else {
+                  alert(data.error || 'Could not send — no email address found for this attempt.');
+                }
+              } catch {
+                alert('Network error. Please try again.');
+              }
             }}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl text-sm font-semibold transition-colors"
           >

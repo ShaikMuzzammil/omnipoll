@@ -44,8 +44,8 @@ export default function AnalyseDetail() {
         {[
           { label:'Total Attempts',    value: analytics.totalAttempts },
           { label:'Completed',         value: analytics.completedAttempts },
-          { label:'Avg Score',         value: analytics.averageScore !== undefined ? `${analytics.averageScore.toFixed(0)}%` : '—' },
-          { label:'Pass Rate',         value: analytics.passRate !== undefined ? `${analytics.passRate.toFixed(0)}%` : '—' },
+          { label:'Avg Score',         value: analytics.averageScore !== undefined ? `${Number(analytics.averageScore).toFixed(0)}%` : '—' },
+          { label:'Pass Rate',         value: analytics.passRate !== undefined ? `${Number(analytics.passRate).toFixed(0)}%` : '—' },
           { label:'Avg Time',          value: analytics.averageTimeSecs ? `${Math.round(analytics.averageTimeSecs)}s` : '—' },
         ].map(s => (
           <div key={s.label} className="stat-card">
@@ -101,7 +101,7 @@ export default function AnalyseDetail() {
                     <motion.div className="h-full rounded-lg flex items-center px-2"
                       style={{ width:`${opt.percentage}%`, backgroundColor: COLORS[i % COLORS.length] }}
                       initial={{ width:0 }} animate={{ width:`${opt.percentage}%` }} transition={{ duration:0.6 }}>
-                      {opt.percentage > 12 && <span className="text-white text-xs font-bold">{opt.percentage.toFixed(0)}%</span>}
+                      {Number(opt.percentage) > 12 && <span className="text-white text-xs font-bold">{Number(opt.percentage).toFixed(0)}%</span>}
                     </motion.div>
                   </div>
                   <span className="text-xs text-slate-500 w-16 text-right">{opt.count} votes</span>
@@ -120,7 +120,7 @@ export default function AnalyseDetail() {
                 <div key={s.name} className={`flex items-center gap-3 px-3 py-2 rounded-xl ${i < 3 ? 'bg-terracotta-50 border border-terracotta-100' : 'bg-cream-50'}`}>
                   <span className="w-6 text-center text-sm font-bold text-terracotta-600">{i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`}</span>
                   <span className="flex-1 text-sm font-medium text-slate-800 truncate">{s.name}</span>
-                  <span className={`text-sm font-bold ${scoreColor(s.score)}`}>{s.score.toFixed(0)}%</span>
+                  <span className={`text-sm font-bold ${scoreColor(Number(s.score))}`}>{Number(s.score).toFixed(0)}%</span>
                 </div>
               ))}
             </div>
@@ -142,14 +142,14 @@ export default function AnalyseDetail() {
                       q.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
                       q.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
                     }`}>{q.difficulty}</span>
-                    <span className={`text-sm font-bold ${scoreColor(q.correctRate)}`}>{q.correctRate.toFixed(0)}% correct</span>
+                    <span className={`text-sm font-bold ${scoreColor(Number(q.correctRate))}`}>{Number(q.correctRate).toFixed(0)}% correct</span>
                   </div>
                 </div>
                 <div className="h-2 bg-cream-200 rounded-full overflow-hidden">
                   <motion.div className={`h-full rounded-full ${q.correctRate >= 60 ? 'bg-green-500' : q.correctRate >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
                     style={{ width:`${q.correctRate}%` }} initial={{ width:0 }} animate={{ width:`${q.correctRate}%` }} transition={{ duration:0.6 }}/>
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Avg time: {q.avgTimeSecs.toFixed(0)}s</p>
+                <p className="text-xs text-slate-400 mt-1">Avg time: {Number(q.avgTimeSecs).toFixed(0)}s</p>
               </div>
             ))}
           </div>

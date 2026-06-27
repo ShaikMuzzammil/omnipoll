@@ -44,8 +44,8 @@ export default function StudentDashboard() {
   const statCards = [
     { label:'Quizzes Done',  value: submitted.length,  icon:CheckCircle, color:'text-green-600',      bg:'bg-green-100' },
     { label:'In Progress',   value: inProgress.length, icon:Play,        color:'text-blue-600',        bg:'bg-blue-100'  },
-    { label:'Avg Score',     value: avgScore!=null?`${avgScore.toFixed(0)}%`:'—', icon:TrendingUp, color:'text-purple-600', bg:'bg-purple-100' },
-    { label:'Best Score',    value: best?.percentage!=null?`${best.percentage.toFixed(0)}%`:'—', icon:Star, color:'text-amber-600', bg:'bg-amber-100' },
+    { label:'Avg Score',     value: avgScore!=null?`${Number(avgScore).toFixed(0)}%`:'—', icon:TrendingUp, color:'text-purple-600', bg:'bg-purple-100' },
+    { label:'Best Score',    value: best?.percentage!=null?`${Number(best.percentage).toFixed(0)}%`:'—', icon:Star, color:'text-amber-600', bg:'bg-amber-100' },
   ];
 
   return (
@@ -156,7 +156,7 @@ export default function StudentDashboard() {
           ) : (
             <div className="space-y-2.5">
               {submitted.slice(0,5).map((a,i) => {
-                const pct = a.percentage ?? 0;
+                const pct = Number(a.percentage ?? 0);
                 return (
                   <motion.div key={a.id} initial={{opacity:0,x:8}} animate={{opacity:1,x:0}} transition={{delay:i*0.05}}
                     className="flex items-center gap-3 p-3 bg-cream-50 border border-cream-200 rounded-xl hover:bg-cream-100 transition-all group">
