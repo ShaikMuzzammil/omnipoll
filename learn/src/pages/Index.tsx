@@ -85,12 +85,8 @@ export default function LearnIndex() {
             ))}
           </div>
 
-          {/* Right — Teacher Portal + Log in + Sign Up (image 10 style) */}
+          {/* Right — Log in + Sign Up */}
           <div className="flex items-center gap-2">
-            <a href={HOST_APP}
-              className="hidden sm:flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-terracotta-600 px-3 py-1.5 rounded-lg transition-all">
-              Teacher Portal →
-            </a>
             <Link to="/login" className="text-sm font-medium text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-lg transition-all">
               Log in
             </Link>
@@ -259,7 +255,7 @@ export default function LearnIndex() {
             </div>
             {[
               { title:'Student',  links:[['Join a Poll','/join'],['My Results','/student/results'],['Classrooms','/classrooms'],['Leaderboard','/leaderboard']] },
-              { title:'Account',  links:[['Sign Up','/signup'],['Log In','/login'],['Support','/contact'],['Teacher Portal →',HOST_APP]] },
+              { title:'Account',  links:[['Sign Up','/signup'],['Log In','/login'],['Support','/contact']] },
             ].map(col => (
               <div key={col.title}>
                 <h4 className="font-semibold text-sm mb-3 text-white/90">{col.title}</h4>
@@ -278,7 +274,7 @@ export default function LearnIndex() {
           </div>
           <div className="border-t border-slate-700 pt-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-sm text-slate-500">
             <span>© {new Date().getFullYear()} OmniPoll Learn. Student portal.</span>
-            <a href={HOST_APP} className="hover:text-terracotta-400 transition-colors text-xs">Educator? Use the Teacher Portal →</a>
+
           </div>
         </div>
       </footer>

@@ -29,6 +29,7 @@ export default function Participate() {
   const [tabWarns,   setTabWarns]   = useState(0);
   const [tabBlocked, setTabBlocked] = useState(false);
   const [currentQ,   setCurrentQ]   = useState(0);
+  const [fsExited,   setFsExited]   = useState(false);
 
   // Answers
   const [selected,    setSelected]   = useState<string[]>([]);
@@ -68,18 +69,28 @@ export default function Participate() {
     }).catch(() => toast.error('Poll not found')).finally(() => setLoading(false));
   }, [pollId]);
 
-  /* ── Fullscreen mode ── */
+  /* ── Fullscreen mode + ESC interception ── */
   useEffect(() => {
     if (!poll?.settings?.fullscreenMode || showPre || submitted) return;
-    const tryFullscreen = async () => {
+    const enterFs = async () => {
       try {
         if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
           await document.documentElement.requestFullscreen();
+          setFsExited(false);
         }
-      } catch { /* user may have denied fullscreen */ }
+      } catch { /* denied */ }
     };
-    tryFullscreen();
+    const onFsChange = () => {
+      if (!document.fullscreenElement && poll?.settings?.fullscreenMode) {
+        setFsExited(true); // show re-enter overlay
+      } else {
+        setFsExited(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    enterFs();
     return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
       if (document.fullscreenElement && document.exitFullscreen) {
         document.exitFullscreen().catch(() => {});
       }
@@ -214,24 +225,63 @@ export default function Participate() {
   /* ── Submitted screen ── */
   if (submitted) return (
     <div className="min-h-screen bg-cream-100 flex items-center justify-center px-4">
-      <motion.div initial={{ opacity:0, scale:0.9 }} animate={{ opacity:1, scale:1 }} className="text-center max-w-sm">
+      <motion.div initial={{ opacity:0, scale:0.9 }} animate={{ opacity:1, scale:1 }} className="text-center max-w-sm w-full">
         <motion.div initial={{ scale:0 }} animate={{ scale:1 }} transition={{ type:'spring', delay:0.1 }}>
-          <CheckCircle size={64} className="text-green-500 mx-auto mb-4"/>
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CheckCircle size={40} className="text-green-500"/>
+          </div>
         </motion.div>
-        <h2 className="font-display text-2xl font-bold text-slate-800 mb-2">Submitted!</h2>
-        <p className="text-slate-500 mb-6 text-sm">Your responses have been recorded. Your teacher will release results shortly.</p>
+        <h2 className="font-display text-2xl font-bold text-slate-800 mb-2">Responses Saved!</h2>
+        <p className="text-slate-500 mb-2 text-sm">Your answers have been recorded successfully.</p>
+        {attemptId ? (
+          <p className="text-xs text-slate-400 mb-6">
+            Your teacher will release results shortly. You’ll see your score and full key sheet once available.
+          </p>
+        ) : (
+          <p className="text-xs text-slate-400 mb-6">Thank you for participating!</p>
+        )}
         <div className="space-y-2">
           {attemptId && (
             <button onClick={() => navigate(`/attempt/${attemptId}/keysheet`)}
-              className="w-full py-2.5 bg-terracotta-500 hover:bg-terracotta-600 text-white rounded-xl font-semibold text-sm transition-all">
-              View Key Sheet
+              className="w-full py-3 bg-terracotta-500 hover:bg-terracotta-600 text-white rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2">
+              <Star size={15}/> View Key Sheet
+            </button>
+          )}
+          {user && (
+            <button onClick={() => navigate('/student/results')}
+              className="w-full py-2.5 bg-white border border-cream-300 text-slate-700 rounded-xl font-semibold text-sm hover:bg-cream-100 transition-all">
+              My Results Dashboard
             </button>
           )}
           <button onClick={() => navigate('/join')}
-            className="w-full py-2.5 bg-white border border-cream-300 text-slate-700 rounded-xl font-semibold text-sm hover:bg-cream-100 transition-all">
+            className="w-full py-2.5 bg-cream-100 border border-cream-200 text-slate-500 rounded-xl text-sm hover:bg-cream-200 transition-all">
             Join Another Poll
           </button>
         </div>
+      </motion.div>
+    </div>
+  );
+
+  /* ── Fullscreen ESC overlay ── */
+  if (fsExited && poll?.settings?.fullscreenMode) return (
+    <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center px-4">
+      <motion.div initial={{ opacity:0, scale:0.9 }} animate={{ opacity:1, scale:1 }}
+        className="text-center max-w-xs w-full">
+        <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+          <AlertTriangle size={32} className="text-red-400"/>
+        </div>
+        <h2 className="font-display text-xl font-bold text-white mb-2">Fullscreen Required</h2>
+        <p className="text-slate-400 text-sm mb-6">This quiz requires fullscreen mode. Please re-enter fullscreen to continue.</p>
+        <button
+          onClick={async () => {
+            try {
+              await document.documentElement.requestFullscreen();
+            } catch { toast.error('Could not enter fullscreen. Please allow fullscreen in browser settings.'); }
+          }}
+          className="w-full py-3 bg-terracotta-500 hover:bg-terracotta-600 text-white rounded-xl font-bold text-sm transition-all mb-2">
+          Re-enter Fullscreen
+        </button>
+        <p className="text-xs text-slate-500">Your progress is saved. Return to fullscreen to continue.</p>
       </motion.div>
     </div>
   );
@@ -338,21 +388,45 @@ export default function Participate() {
               initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}
               className="op-card p-5">
 
-              {/* MC / Quiz / TF */}
-              {['multiple_choice','quiz','true_false','image_choice'].includes(q?.type ?? poll.type) && (
-                <div className="space-y-2">
-                  {(q?.type === 'true_false' ? [{id:'t',text:'True'},{id:'f',text:'False'}] : opts).map((opt: any, oi: number) => (
-                    <button key={opt.id} onClick={() => setSelected([opt.id])}
-                      className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all ${
-                        selected.includes(opt.id) ? 'border-terracotta-500 bg-terracotta-50' : 'border-cream-300 bg-white hover:border-terracotta-300'}`}>
-                      <span className={`w-7 h-7 rounded-full border-2 flex-shrink-0 flex items-center justify-center text-xs font-bold ${selected.includes(opt.id) ? 'border-terracotta-500 bg-terracotta-500 text-white' : 'border-slate-300 text-slate-400'}`}>
-                        {String.fromCharCode(65+oi)}
-                      </span>
-                      <span className="text-sm font-medium text-slate-700">{opt.text}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+              {/* MC / Quiz / TF — single or multi-answer */}
+              {['multiple_choice','quiz','true_false','image_choice'].includes(q?.type ?? poll.type) && (() => {
+                const isMultiAnswer = Boolean((q as any)?.multipleCorrect);
+                const isTF = (q?.type ?? poll.type) === 'true_false';
+                const displayOpts = isTF ? [{id:'t',text:'True'},{id:'f',text:'False'}] : opts;
+                return (
+                  <div className="space-y-2">
+                    {isMultiAnswer && (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700 mb-3">
+                        <CheckCircle size={13}/> <span><span className="font-bold">Multi-answer question</span> — select all that apply</span>
+                      </div>
+                    )}
+                    {displayOpts.map((opt: any, oi: number) => {
+                      const isSelected = selected.includes(opt.id);
+                      const toggle = () => {
+                        if (isMultiAnswer) {
+                          setSelected(prev => prev.includes(opt.id) ? prev.filter(id=>id!==opt.id) : [...prev, opt.id]);
+                        } else {
+                          setSelected([opt.id]);
+                        }
+                      };
+                      return (
+                        <button key={opt.id} onClick={toggle}
+                          className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all ${
+                            isSelected ? 'border-terracotta-500 bg-terracotta-50' : 'border-cream-300 bg-white hover:border-terracotta-300'}`}>
+                          <span className={`w-7 h-7 ${isMultiAnswer?'rounded-md':'rounded-full'} border-2 flex-shrink-0 flex items-center justify-center text-xs font-bold ${isSelected ? 'border-terracotta-500 bg-terracotta-500 text-white' : 'border-slate-300 text-slate-400'}`}>
+                            {isMultiAnswer ? (isSelected ? <CheckCircle size={14}/> : String.fromCharCode(65+oi)) : String.fromCharCode(65+oi)}
+                          </span>
+                          <span className="text-sm font-medium text-slate-700">{opt.text}</span>
+                          {isMultiAnswer && isSelected && <span className="ml-auto text-xs text-terracotta-600 font-bold">✓ Selected</span>}
+                        </button>
+                      );
+                    })}
+                    {isMultiAnswer && selected.length > 0 && (
+                      <p className="text-xs text-slate-400 text-center pt-1">{selected.length} option{selected.length!==1?'s':''} selected</p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Open / Word Cloud / Fill blank */}
               {['word_cloud','open_ended','fill_blank','qa'].includes(q?.type ?? poll.type) && (

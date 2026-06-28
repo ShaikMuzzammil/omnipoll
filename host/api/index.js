@@ -1450,46 +1450,76 @@ app.post('/api/attempts/:id/email-result', async (req, res) => {
   const u = await auth(req, res, true);
   try {
     const aR = await db(
-      'SELECT a.*, p.title as poll_title FROM attempts a JOIN polls p ON p.id=a.poll_id WHERE a.id=$1',
+      `SELECT a.*, p.title as poll_title, p.type as poll_type, p.settings as poll_settings
+       FROM attempts a JOIN polls p ON p.id=a.poll_id WHERE a.id=$1`,
       [req.params.id]
     );
     if (!aR.rows[0]) return err(res, 404, 'Attempt not found');
     const a = aR.rows[0];
 
-    // Resolve email: attempt guest_email > logged-in user's email
-    let toEmail = a.guest_email;
+    // Resolve email: request body > attempt guest_email > logged-in user's email
+    let toEmail = req.body?.email || a.guest_email;
     if (!toEmail && u) {
       const uR = await db('SELECT email FROM users WHERE id=$1', [u.id]);
       toEmail = uR.rows[0]?.email || null;
     }
-    if (!toEmail) return err(res, 400, 'No email address on record for this attempt');
+    if (!toEmail) return err(res, 400, 'No email address on record for this attempt. Provide an email in the request.');
 
     if (!process.env.RESEND_API_KEY) {
-      // No Resend key — acknowledge gracefully
-      return ok(res, { message: 'Email queued (add RESEND_API_KEY to Vercel env to enable sending)', to: toEmail });
+      console.log('[email-result] No RESEND_API_KEY set — logging attempt', { attemptId: a.id, to: toEmail });
+      return ok(res, { message: 'Email not sent: add RESEND_API_KEY to Vercel environment variables to enable email delivery.', to: toEmail, configured: false });
     }
 
-    const pct      = Math.round(Number(a.percentage || 0));
+    const pct       = Math.round(Number(a.percentage || 0));
+    const score     = Number(a.score || 0);
+    const maxScore  = Number(a.max_score || 0);
+    const passed    = Boolean(a.passed);
+    const timeTaken = a.time_taken ? `${Math.floor(a.time_taken / 60)}m ${a.time_taken % 60}s` : null;
     const fromEmail = process.env.FROM_EMAIL || 'OmniPoll <onboarding@resend.dev>';
-    const learnUrl  = process.env.VITE_STUDENT_APP_URL || 'https://omnipoll-learn.vercel.app';
+    // LEARN app URL: prefer STUDENT_APP_URL env, then VITE_STUDENT_APP_URL, then default
+    const learnUrl  = process.env.STUDENT_APP_URL || process.env.VITE_STUDENT_APP_URL || 'https://omnipoll-learn.vercel.app';
+    const scoreColor = pct >= 70 ? '#16a34a' : pct >= 40 ? '#ca8a04' : '#dc2626';
+    const gradeLabel = pct >= 90 ? 'Excellent!' : pct >= 70 ? 'Good Job!' : pct >= 50 ? 'Keep Practicing' : 'Needs Review';
 
-    const htmlBody = `
-      <div style="font-family:system-ui,sans-serif;max-width:520px;margin:auto;padding:24px;background:#FEFAF5;border-radius:12px;border:1px solid #E4CC94">
-        <div style="background:#D96C4A;color:white;padding:20px;border-radius:8px;text-align:center;margin-bottom:20px">
-          <h1 style="margin:0;font-size:24px">🎓 OmniPoll Results</h1>
-          <p style="margin:8px 0 0;opacity:0.9;font-size:14px">${a.poll_title}</p>
-        </div>
-        <div style="background:white;border-radius:8px;padding:24px;border:1px solid #E4CC94;text-align:center;margin-bottom:16px">
-          <p style="font-size:13px;color:#64748b;margin:0 0 8px">Your Score</p>
-          <p style="font-size:52px;font-weight:900;color:${pct >= 60 ? '#16a34a' : pct >= 40 ? '#ca8a04' : '#dc2626'};margin:0">${pct}%</p>
-          <p style="font-size:14px;color:#64748b;margin:8px 0 0">${Number(a.score || 0)} / ${Number(a.max_score || 0)} points &nbsp;·&nbsp; ${a.passed ? '✅ Passed' : '❌ Not passed'}</p>
-        </div>
-        <a href="${learnUrl}/attempt/${a.id}/keysheet"
-           style="display:block;background:#D96C4A;color:white;text-decoration:none;padding:14px;border-radius:8px;text-align:center;font-weight:700;font-size:15px;margin-bottom:16px">
-          📋 View Full Answer Sheet →
-        </a>
-        <p style="text-align:center;font-size:11px;color:#94a3b8;margin:0">OmniPoll · The complete interactive polling platform</p>
-      </div>`;
+    const htmlBody = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:16px;background:#F5F5F0;font-family:system-ui,-apple-system,sans-serif">
+  <div style="max-width:540px;margin:auto">
+    <!-- Header -->
+    <div style="background:#D96C4A;border-radius:16px 16px 0 0;padding:28px 24px;text-align:center">
+      <div style="font-size:32px;margin-bottom:8px">🎓</div>
+      <h1 style="color:white;margin:0;font-size:22px;font-weight:800;letter-spacing:-0.3px">OmniPoll Results</h1>
+      <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:14px;font-weight:500">${a.poll_title}</p>
+    </div>
+    <!-- Score card -->
+    <div style="background:white;padding:32px 24px;text-align:center;border-left:1px solid #E4CC94;border-right:1px solid #E4CC94">
+      <p style="font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 8px;font-weight:600">Your Score</p>
+      <p style="font-size:64px;font-weight:900;color:${scoreColor};margin:0;line-height:1">${pct}%</p>
+      <p style="font-size:16px;font-weight:700;color:${scoreColor};margin:6px 0">${gradeLabel}</p>
+      <p style="font-size:14px;color:#64748b;margin:8px 0 0">${score} / ${maxScore} points${timeTaken ? ` &nbsp;·&nbsp; Time: ${timeTaken}` : ''}</p>
+      <div style="margin-top:12px;display:inline-block;padding:4px 14px;border-radius:20px;background:${passed ? '#dcfce7' : '#fee2e2'};color:${passed ? '#15803d' : '#dc2626'};font-size:13px;font-weight:700">
+        ${passed ? '✅ Passed' : '❌ Not passed'}
+      </div>
+    </div>
+    <!-- CTA -->
+    <div style="background:#FEFAF5;padding:24px;border:1px solid #E4CC94;border-top:none">
+      <a href="${learnUrl}/attempt/${a.id}/keysheet"
+         style="display:block;background:#D96C4A;color:white;text-decoration:none;padding:16px;border-radius:10px;text-align:center;font-weight:700;font-size:15px;margin-bottom:16px;letter-spacing:-0.2px">
+        📋 View Full Answer Sheet &amp; Key →
+      </a>
+      <a href="${learnUrl}/student/results"
+         style="display:block;background:white;color:#64748b;text-decoration:none;padding:12px;border-radius:10px;text-align:center;font-size:13px;border:1px solid #E4CC94">
+        View All My Results
+      </a>
+    </div>
+    <!-- Footer -->
+    <div style="padding:16px 24px;text-align:center">
+      <p style="font-size:11px;color:#94a3b8;margin:0">Sent by OmniPoll · <a href="${learnUrl}" style="color:#D96C4A;text-decoration:none">omnipoll-learn.vercel.app</a></p>
+    </div>
+  </div>
+</body>
+</html>`;
 
     const emailRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -1500,18 +1530,18 @@ app.post('/api/attempts/:id/email-result', async (req, res) => {
       body: JSON.stringify({
         from: fromEmail,
         to: [toEmail],
-        subject: `Your OmniPoll results: ${a.poll_title} — ${pct}%`,
+        subject: `Your results for "${a.poll_title}" — ${pct}% ${gradeLabel}`,
         html: htmlBody,
       }),
     });
 
     if (!emailRes.ok) {
       const errData = await emailRes.json().catch(() => ({}));
-      console.error('[email-result] Resend error:', errData);
-      return err(res, 502, `Email delivery failed: ${errData.message || 'Resend API error'}`);
+      console.error('[email-result] Resend API error:', JSON.stringify(errData));
+      return err(res, 502, `Email delivery failed: ${errData.message || errData.error?.message || 'Resend API error'}. Check FROM_EMAIL is a verified sender in your Resend account.`);
     }
 
-    ok(res, { message: 'Result emailed successfully', to: toEmail });
+    ok(res, { message: 'Result emailed successfully', to: toEmail, configured: true });
   } catch (e) { err(res, 500, e.message); }
 });
 

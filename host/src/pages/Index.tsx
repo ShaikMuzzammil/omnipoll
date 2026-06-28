@@ -10,6 +10,8 @@ import {
 import { pollTypeLabel, pollTypeIcon } from '@/lib/utils';
 import type { PollType } from '@/lib/types';
 
+const LEARN_APP = import.meta.env.VITE_STUDENT_APP_URL ?? 'https://omnipoll-learn.vercel.app';
+
 /* ── Data ─────────────────────────────────────────────────────────────────── */
 const POLL_TYPES: PollType[] = [
   'multiple_choice','quiz','word_cloud','qa','nps','rating','slider','ranking',
@@ -51,6 +53,7 @@ const LIVE_DEMO_DATA = [
   { label:'Team hiring',          pct:12, color:'#5A9AB5' },
 ];
 const NAV = [['#','Home'],['#demo','Demo'],['#how','How It Works'],['#features','Features'],['#testimonials','Testimonials'],['/contact','Contact']];
+const LEARN_LINK = LEARN_APP;
 
 const fade = { hidden:{ opacity:0, y:18 }, show:{ opacity:1, y:0 } };
 const stagger = { show:{ transition:{ staggerChildren:0.07 } } };
@@ -379,6 +382,58 @@ export default function Index() {
                 </div>
               </motion.div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── For Teachers & Students ────────────────────────────── */}
+      <section className="py-20 bg-white border-y border-cream-300">
+        <div className="max-w-5xl mx-auto px-4">
+          <motion.div initial="hidden" whileInView="show" viewport={{ once:true }} variants={stagger} className="text-center mb-12">
+            <motion.h2 variants={fade} className="font-display text-4xl font-bold text-slate-800 mb-3">Two portals. One platform.</motion.h2>
+            <motion.p variants={fade} className="text-slate-500 text-lg">Everything a teacher needs to create, and everything a student needs to learn.</motion.p>
+          </motion.div>
+          <div className="grid md:grid-cols-2 gap-6">
+            <motion.div initial={{ opacity:0, x:-20 }} whileInView={{ opacity:1, x:0 }} viewport={{ once:true }} transition={{ duration:0.5 }}
+              className="relative bg-slate-800 rounded-3xl p-8 text-white overflow-hidden group">
+              <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage:'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize:'20px 20px' }}/>
+              <div className="relative z-10">
+                <div className="w-12 h-12 bg-terracotta-500 rounded-2xl flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform">
+                  <GraduationCap size={24} className="text-white"/>
+                </div>
+                <div className="text-xs font-bold text-terracotta-400 uppercase tracking-widest mb-1">For Educators</div>
+                <h3 className="font-display text-2xl font-bold mb-3">OmniPoll HOST</h3>
+                <p className="text-slate-300 text-sm leading-relaxed mb-5">Create quizzes, launch live polls, view real-time results, manage classrooms and email reports — all from one powerful dashboard.</p>
+                <ul className="space-y-2 mb-6 text-sm text-slate-300">
+                  {['20 poll & quiz types','Live results & analytics','Anti-cheat detection','Email result reports'].map(f => (
+                    <li key={f} className="flex items-center gap-2"><CheckCircle size={14} className="text-green-400 flex-shrink-0"/>{f}</li>
+                  ))}
+                </ul>
+                <Link to="/signup" className="inline-flex items-center gap-2 bg-terracotta-500 hover:bg-terracotta-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition-all hover:-translate-y-0.5 shadow-lg">
+                  Start for Free <ArrowRight size={15}/>
+                </Link>
+              </div>
+            </motion.div>
+            <motion.div initial={{ opacity:0, x:20 }} whileInView={{ opacity:1, x:0 }} viewport={{ once:true }} transition={{ duration:0.5 }}
+              className="relative bg-gradient-to-br from-terracotta-500 to-terracotta-700 rounded-3xl p-8 text-white overflow-hidden group">
+              <div className="absolute inset-0 opacity-[0.08]" style={{ backgroundImage:'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize:'20px 20px' }}/>
+              <div className="relative z-10">
+                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform">
+                  <Users size={24} className="text-white"/>
+                </div>
+                <div className="text-xs font-bold text-terracotta-200 uppercase tracking-widest mb-1">For Students</div>
+                <h3 className="font-display text-2xl font-bold mb-3">OmniPoll LEARN</h3>
+                <p className="text-terracotta-100 text-sm leading-relaxed mb-5">Join live quizzes with a code, take timed tests, review answers with full key sheets, and track progress over time.</p>
+                <ul className="space-y-2 mb-6 text-sm text-terracotta-100">
+                  {['Join by 6-char code or QR','Instant score & feedback','Full answer key sheets','Progress tracking over time'].map(f => (
+                    <li key={f} className="flex items-center gap-2"><CheckCircle size={14} className="text-white/80 flex-shrink-0"/>{f}</li>
+                  ))}
+                </ul>
+                <a href={LEARN_LINK} className="inline-flex items-center gap-2 bg-white hover:bg-cream-100 text-terracotta-600 px-5 py-2.5 rounded-xl font-bold text-sm transition-all hover:-translate-y-0.5 shadow-lg">
+                  Open Student Portal <ArrowRight size={15}/>
+                </a>
+              </div>
+            </motion.div>
           </div>
         </div>
       </section>

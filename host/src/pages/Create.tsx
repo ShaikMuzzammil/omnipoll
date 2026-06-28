@@ -43,6 +43,7 @@ interface Question {
   id:string; title:string; description?:string; type:PollType;
   options:Option[]; timeLimit?:number; points:number;
   shuffleOptions:boolean; required:boolean; explanation?:string;
+  multipleCorrect?:boolean;
   matrixRows?:{id:string;text:string}[]; matrixCols?:{id:string;text:string}[];
   matchPairs?:{id:string;left:string;right:string}[];
   sliderMin?:number; sliderMax?:number; sliderStep?:number;
@@ -52,7 +53,7 @@ interface Question {
 const newOpt = (i:number): Option => ({ id:`${Date.now()}-${i}`, text:'', isCorrect:false, points:0 });
 const newQ = (type:PollType='multiple_choice'): Question => ({
   id:Date.now().toString(), title:'', type, options:[newOpt(0),newOpt(1),newOpt(2),newOpt(3)],
-  points:1, shuffleOptions:false, required:true,
+  points:1, shuffleOptions:false, required:true, multipleCorrect:false,
   matrixRows:[{id:'r1',text:''},{id:'r2',text:''}],
   matrixCols:[{id:'c1',text:''},{id:'c2',text:''}],
   matchPairs:[{id:'p1',left:'',right:''},{id:'p2',left:'',right:''}],
@@ -398,26 +399,56 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                   </div>
                 )}
 
-                {/* MCQ / Quiz / Image — generic options */}
+                {/* MCQ / Quiz / Image — generic options with multi-answer support */}
                 {qNeedsOpts&&qType!=='matrix'&&qType!=='matching'&&qType!=='true_false'&&(
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
                         <List size={12}/> Options
-                        {qIsQuiz&&<span className="text-slate-400 font-normal normal-case ml-1">— click ○ to mark correct</span>}
+                        {qIsQuiz&&<span className="text-slate-400 font-normal normal-case ml-1">
+                          {q.multipleCorrect ? '— check all correct answers' : '— click ○ to mark correct answer'}
+                        </span>}
                       </label>
-                      <span className="text-xs text-slate-400">{q.options.filter(o=>o.text).length} filled</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">{q.options.filter(o=>o.text).length} filled</span>
+                        {qIsQuiz&&['quiz','multiple_choice','image_choice'].includes(qType)&&(
+                          <button
+                            onClick={()=>{
+                              const next = !q.multipleCorrect;
+                              updateQ(activeQ,{multipleCorrect:next});
+                              // If switching to single-answer, keep only first correct
+                              if(!next){
+                                const firstCorrect = q.options.findIndex(o=>o.isCorrect);
+                                if(firstCorrect>=0) setCorrect(activeQ,firstCorrect);
+                              }
+                            }}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${q.multipleCorrect?'bg-blue-50 border-blue-300 text-blue-700':'border-cream-300 text-slate-500 hover:border-blue-200'}`}
+                            title="Allow multiple correct answers">
+                            {q.multipleCorrect ? '☒ Multi-Answer' : '□ Multi-Answer'}
+                          </button>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Multi-answer hint badge */}
+                    {qIsQuiz&&q.multipleCorrect&&(
+                      <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
+                        <span className="font-bold">Multi-Answer Mode</span>
+                        <span className="text-blue-500">Students can select multiple options. Check all that are correct below.</span>
+                      </div>
+                    )}
+
                     {q.options.map((opt,oi)=>(
                       <motion.div key={opt.id} layout
                         className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-all ${opt.isCorrect?'bg-green-50 border-green-200':'bg-white border-cream-200 hover:border-cream-300'}`}>
                         <GripVertical size={14} className="text-slate-300 flex-shrink-0 cursor-grab"/>
-                        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${opt.isCorrect?'bg-green-500 text-white':'bg-cream-200 text-slate-600'}`}>
+                        <span className={`w-6 h-6 ${q.multipleCorrect?'rounded-md':'rounded-full'} flex items-center justify-center text-xs font-black flex-shrink-0 ${opt.isCorrect?'bg-green-500 text-white':'bg-cream-200 text-slate-600'}`}>
                           {String.fromCharCode(65+oi)}
                         </span>
                         {qIsQuiz&&(
-                          <button onClick={()=>['quiz','true_false'].includes(qType)?setCorrect(activeQ,oi):toggleCorrect(activeQ,oi)}
-                            className={`w-5 h-5 rounded-full border-2 flex-shrink-0 transition-all flex items-center justify-center ${opt.isCorrect?'bg-green-500 border-green-500':'border-slate-300 hover:border-green-400'}`}>
+                          <button onClick={()=>q.multipleCorrect?toggleCorrect(activeQ,oi):setCorrect(activeQ,oi)}
+                            className={`flex-shrink-0 transition-all flex items-center justify-center ${q.multipleCorrect?'w-5 h-5 rounded border-2':'w-5 h-5 rounded-full border-2'} ${opt.isCorrect?'bg-green-500 border-green-500':'border-slate-300 hover:border-green-400'}`}
+                            title={q.multipleCorrect?'Toggle correct':'Set as correct'}>
                             {opt.isCorrect&&<Check size={10} className="text-white"/>}
                           </button>
                         )}
@@ -434,10 +465,15 @@ export default function Create({ editMode=false }: { editMode?:boolean }) {
                         )}
                       </motion.div>
                     ))}
-                    <button onClick={()=>addOpt(activeQ)}
-                      className="flex items-center gap-1.5 text-xs text-terracotta-600 hover:text-terracotta-700 font-semibold mt-1 px-1 py-1 hover:bg-terracotta-50 rounded-lg transition-colors">
-                      <Plus size={13}/> Add Option
-                    </button>
+                    <div className="flex items-center justify-between mt-1">
+                      <button onClick={()=>addOpt(activeQ)}
+                        className="flex items-center gap-1.5 text-xs text-terracotta-600 hover:text-terracotta-700 font-semibold px-1 py-1 hover:bg-terracotta-50 rounded-lg transition-colors">
+                        <Plus size={13}/> Add Option
+                      </button>
+                      {qIsQuiz&&q.multipleCorrect&&(
+                        <span className="text-xs text-blue-600 font-medium">{q.options.filter(o=>o.isCorrect).length} correct selected</span>
+                      )}
+                    </div>
                     {qIsQuiz&&q.options.some(o=>o.isCorrect)&&(
                       <div className="mt-2">
                         <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wide">Explanation (shown in key sheet)</label>
