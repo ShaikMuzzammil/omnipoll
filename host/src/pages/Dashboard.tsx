@@ -420,7 +420,8 @@ function PollMiniCard({ poll, delay, onStatusChange, onRelease, onDuplicate, onD
               <button onClick={() => { onDuplicate(poll.id); setMenu(false); }} className="flex items-center gap-2 px-3 py-2 hover:bg-cream-50 text-slate-700 w-full"><Copy size={12}/> Duplicate</button>
               {poll.status==='draft' && <button onClick={() => { onStatusChange(poll.id,'active'); setMenu(false); }} className="flex items-center gap-2 px-3 py-2 hover:bg-green-50 text-green-700 w-full"><Play size={12}/> Launch</button>}
               {poll.status==='active' && <button onClick={() => { onStatusChange(poll.id,'closed'); setMenu(false); }} className="flex items-center gap-2 px-3 py-2 hover:bg-red-50 text-red-600 w-full"><Square size={12}/> Close</button>}
-              {poll.status==='closed' && <button onClick={() => { onRelease(poll.id); setMenu(false); }} className="flex items-center gap-2 px-3 py-2 hover:bg-purple-50 text-purple-700 w-full">🔓 Release</button>}
+              {poll.status==='closed' && <button onClick={() => { onStatusChange(poll.id,'active'); setMenu(false); }} className="flex items-center gap-2 px-3 py-2 hover:bg-green-50 text-green-700 w-full"><Play size={12}/> Reopen</button>}
+              {poll.status==='closed' && <button onClick={() => { onRelease(poll.id); setMenu(false); }} className="flex items-center gap-2 px-3 py-2 hover:bg-purple-50 text-purple-700 w-full">🔓 Release Results</button>}
               <div className="border-t border-cream-100 my-1"/>
               <button onClick={() => { onDelete(poll.id); setMenu(false); }} className="flex items-center gap-2 px-3 py-2 hover:bg-red-50 text-red-500 w-full"><Trash2 size={12}/> Delete</button>
             </div>

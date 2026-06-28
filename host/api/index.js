@@ -1618,8 +1618,13 @@ app.get('/api/moderation/alerts', async (req, res) => {
   if (!u) return;
   try {
     const r = await db(
-      `SELECT ta.*, p.title as poll_title_from_poll FROM tab_alerts ta
+      `SELECT ta.*,
+              p.title as poll_title_from_poll,
+              p.classroom_id,
+              c.name as classroom_name
+       FROM tab_alerts ta
        JOIN polls p ON p.id=ta.poll_id
+       LEFT JOIN classrooms c ON c.id=p.classroom_id
        WHERE p.creator_id=$1 ORDER BY ta.created_at DESC LIMIT 200`,
       [u.id]
     );
@@ -1627,7 +1632,47 @@ app.get('/api/moderation/alerts', async (req, res) => {
       id: a.id, pollId: a.poll_id, studentName: a.student_name, studentEmail: a.student_email,
       switchCount: a.switch_count, severity: a.severity,
       pollTitle: a.poll_title || a.poll_title_from_poll,
+      classroomName: a.classroom_name || null,
       isResolved: a.is_resolved, createdAt: a.created_at,
+    })));
+  } catch (e) { err(res, 500, e.message); }
+});
+
+// ── Resolve ALL unresolved alerts for this teacher ────────────────────────────
+app.patch('/api/moderation/resolve-all', async (req, res) => {
+  const u = await auth(req, res);
+  if (!u) return;
+  try {
+    await db(
+      `UPDATE tab_alerts SET is_resolved=true
+       WHERE id IN (
+         SELECT ta.id FROM tab_alerts ta
+         JOIN polls p ON p.id=ta.poll_id
+         WHERE p.creator_id=$1 AND ta.is_resolved=false
+       )`,
+      [u.id]
+    );
+    ok(res, { message: 'All resolved' });
+  } catch (e) { err(res, 500, e.message); }
+});
+
+// ── Active participants per poll (for Live Sessions panel) ────────────────────
+app.get('/api/moderation/active-sessions', async (req, res) => {
+  const u = await auth(req, res);
+  if (!u) return;
+  try {
+    const r = await db(
+      `SELECT p.id, p.title, p.code,
+              COUNT(DISTINCT a.id)::int AS active_count
+       FROM polls p
+       LEFT JOIN attempts a ON a.poll_id=p.id AND a.status='in_progress'
+       WHERE p.creator_id=$1 AND p.status='active'
+       GROUP BY p.id, p.title, p.code
+       ORDER BY p.updated_at DESC`,
+      [u.id]
+    );
+    ok(res, r.rows.map(p => ({
+      id: p.id, title: p.title, code: p.code, activeCount: p.active_count,
     })));
   } catch (e) { err(res, 500, e.message); }
 });

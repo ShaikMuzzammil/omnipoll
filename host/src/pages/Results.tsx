@@ -202,6 +202,12 @@ export default function Results() {
             </button>
           )}
           {(poll.status==='closed'||poll.status==='paused')&&(
+            <button onClick={()=>statusMut.mutate('active')} disabled={statusMut.isPending}
+              className="flex items-center gap-1.5 px-3 py-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-xl text-sm font-semibold transition-all disabled:opacity-60">
+              {statusMut.isPending?<Loader2 size={14} className="animate-spin"/>:<Play size={14}/>} Reopen
+            </button>
+          )}
+          {(poll.status==='closed'||poll.status==='paused')&&(
             <button onClick={()=>releaseMut.mutate()} disabled={releaseMut.isPending}
               className="flex items-center gap-1.5 px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-xl text-sm font-bold transition-all shadow-sm disabled:opacity-70">
               {releaseMut.isPending?<Loader2 size={14} className="animate-spin"/>:<Lock size={14}/>} Release Results
